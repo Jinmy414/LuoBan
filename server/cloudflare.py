@@ -69,10 +69,18 @@ def install(app, within_limit):
         try:
             result = post_json(f"https://api.cloudflare.com/client/v4/accounts/{cfg['CF_ACCOUNT_ID']}/ai/run/{MODEL}",
                                {"messages": [{"role": "system", "content": INSTRUCTIONS}, {"role": "user", "content": query}],
-                                "max_tokens": 400, "temperature": 0.4},
-                               {"Authorization": "Bearer " + cfg["CF_AI_TOKEN"]}, timeout=16)
+                                "max_tokens": 400, "temperature": 0.4, "response_format": {"type": "json_object"}},
+                               {"Authorization": "Bearer " + cfg["CF_AI_TOKEN"]}, timeout=24)
             if isinstance(result, dict) and result.get("success") and isinstance(result.get("result"), dict):
-                answer = result["result"].get("response")
+                body = result["result"]
+                answer = body.get("response")
+                choices = body.get("choices")
+                if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+                    message = choices[0].get("message")
+                    if isinstance(message, dict) and message.get("content"):
+                        answer = message["content"]
+                if isinstance(answer, dict) and "recommendations" in answer:
+                    answer = json.dumps(answer, ensure_ascii=False)
                 if isinstance(answer, str) and answer.strip():
                     return jsonify(text=answer, model="Llama 3.3 70B")
         except (OSError, ValueError):

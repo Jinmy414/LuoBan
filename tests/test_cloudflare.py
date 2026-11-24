@@ -61,7 +61,7 @@ class CloudflareIntegrationTest(unittest.TestCase):
         self.assertEqual(self.post("anime-recommend", **self.query, turnstileToken="wrong").status_code, 403)
         cloud.side_effect = [self.verdict("anime_chat"), OSError("quota")]
         self.assertEqual(self.post("anime-recommend", **self.query, turnstileToken="ok").json, {"fallback": True})
-        cloud.side_effect = [self.verdict("anime_chat"), {"success": True, "result": {"response": "推荐结果"}}]
+        cloud.side_effect = [self.verdict("anime_chat"), {"success": True, "result": {"choices": [{"message": {"content": "推荐结果"}}]}}]
         res = self.post("anime-recommend", **self.query, turnstileToken="ok")
         self.assertEqual(res.json, {"model": "Llama 3.3 70B", "text": "推荐结果"})
         url, body, headers = cloud.call_args.args
