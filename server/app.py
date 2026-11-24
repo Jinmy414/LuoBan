@@ -141,7 +141,7 @@ def create_app(overrides=None):
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
             if request.path == "/api/anime-recommend":
-                request.max_content_length = 16000
+                request.max_content_length = 24000
             elif request.path == "/api/member-showcase" or request.path.startswith("/api/discussion/"):
                 request.max_content_length = 320_000
             elif request.path in {"/api/account", "/api/submissions", "/api/reviews"} or request.path.startswith("/api/episodes/"):

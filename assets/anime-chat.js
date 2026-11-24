@@ -15,7 +15,9 @@ const animeChat = (() => {
     [/乐队|音乐|偶像|摇滚|合奏/u, '孤独摇滚 吹响吧！上低音号 佐贺偶像是传奇'],
     [/战斗|动作|少年漫|伙伴/u, '火影忍者 钢之炼金术师FA 鬼灭之刃 海贼王 一拳超人 咒术回战']
   ];
-  const prefix = '{"recommendations":[{"title":"';
+  const actionPrefix = '{"action":"';
+  let prompts;
+  const pickPrefix = '{"recommendations":[{"title":"';
   let turns = [];
   let draft = '';
   let pending = null;
@@ -40,44 +42,76 @@ const animeChat = (() => {
     return items;
   }
 
-  function recommendationContext(question, items) {
-    const recent = turns.slice(-3).map(turn => ({
-      问: turn.question.slice(0, 150), 答: turn.reply.slice(0, 65),
-      推荐: turn.picks.map(p => p.title)
+  function conversationHistory() {
+    const recent = turns.slice(-3);
+    // Keep the last recommendation available even when several social turns intervene.
+    const lastPicks = turns.slice().reverse().find(turn => turn.picks.length);
+    if (lastPicks && !recent.includes(lastPicks)) recent.unshift(lastPicks);
+    const summary = recent.map(turn => ({
+      用户:turn.question.slice(0, 180), 助手:turn.reply.slice(0, 150),
+      推荐:turn.picks.map(p => ({片名:p.title.slice(0, 90), 理由:p.reason.slice(0, 125)}))
     }));
-    const history = JSON.stringify(recent);
-    const names = [...items.values()].map(w => w.title);
-    // Keep named and previously discussed works in the window as the catalogue grows.
-    const mentioned = titleKey(question + history);
-    const subject = question + recent.map(turn => turn.问 + turn.推荐.join(' ')).join(' ');
+    while (summary.length && JSON.stringify(summary).length > 4000) summary.shift();
+    return JSON.stringify(summary);
+  }
+
+  function candidates(question, query) {
+    const shown = new Set(turns.flatMap(turn => turn.picks.map(p => p.id)));
+    const items = catalogue();
+    const names = [...items.values()].filter(work => !shown.has(work.id)).map(work => work.title);
+    const subject = question + ' ' + query;
+    const mentioned = titleKey(subject);
     const priority = names.filter(name => mentioned.includes(titleKey(name)));
     for (const [theme, titles] of shelves) {
-      if (theme.test(subject)) priority.push(...titles.split(' ').filter(t => items.has(titleKey(t))));
+      if (theme.test(subject)) priority.push(...titles.split(' ').filter(t => names.includes(t)));
     }
-    let list = '';
+    const selected = new Map();
+    let length = 0;
     // Start with relevant works and sample across the imported catalogue, including newer entries.
     const varied = Array.from({length:names.length}, (_, i) => names[(i % 5) * Math.ceil(names.length / 5) + Math.floor(i / 5)]).filter(Boolean);
     for (const name of new Set([...priority, ...varied, ...names])) {
-      if (list.length + name.length > 850) break;
-      list += (list ? '｜' : '') + name;
+      if (length + name.length + 1 > 850) continue;
+      const key = titleKey(name);
+      selected.set(key, items.get(key));
+      length += name.length + 1;
     }
-    return {question, titles:list, history};
+    return selected;
   }
 
-  function hordePrompt({question, titles, history}) {
-    const clean = text => text.replace(/<\|[^\n]*?\|>/g, '').replace(/<\/?think>/gi, '');
-    return '<|im_start|>system\n你是罗瓣的中文动漫推荐助手。根据用户的口味从候选片名中推荐，不剧透。返回 JSON：{"recommendations":[{"title":"候选片名原文","reason":"为什么适合对方"}],"reply":"一句回应或追问"}。无法推荐时用空片名并在 reply 中回应。<|im_end|>\n'
-      + '<|im_start|>user\n最近聊过：' + clean(history) + '\n候选片名：' + clean(titles)
-      + '\n观众说：' + clean(question) + '\n结合观众的要求，在上面选一到两部，在 recommendations 中逐部写中文理由。追问时参考之前的对话；换几部时避开刚推荐的作品。/no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n' + prefix;
+  async function hordePrompt({question, titles, history, query, phase}) {
+    if (!prompts) prompts = await request('assets/anime-prompts.json?v=1');
+    const message = {最近对话:JSON.parse(history), 当前消息:question};
+    if (phase === 'recommend') Object.assign(message, {选片条件:query, 候选片名:titles});
+    const input = JSON.stringify(message).replace(/<\|[^\n]*?\|>/g, '').replace(/<\/?think>/gi, '');
+    const prefix = phase === 'conversation' ? actionPrefix : pickPrefix;
+    return '<|im_start|>system\n' + prompts[phase].join('\n') + '<|im_end|>\n<|im_start|>user\n'
+      + input + '\n/no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n' + prefix;
   }
+
+  function jsonText(generation, prefix) {
+    const raw = String(generation?.text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim().replace(/^```(?:json)?\s*/i, '');
+    const combined = raw.startsWith('{') ? raw : prefix + raw;
+    return combined.slice(0, combined.lastIndexOf('}') + 1);
+  }
+
+  function readDecision(generation) {
+    const decision = JSON.parse(jsonText(generation, actionPrefix));
+    if (decision?.action === 'reply' && typeof decision.reply === 'string' && decision.reply.trim()) {
+      return {reply:decision.reply.trim().slice(0, 600), picks:[], model:modelName(generation)};
+    }
+    if (decision?.action === 'search' && typeof decision.query === 'string' && decision.query.trim()) {
+      return {query:decision.query.trim().slice(0, 360)};
+    }
+    throw new Error('暂时无法理解这条消息，请重试。');
+  }
+
+  function modelName(generation) { return String(generation.model || '').split('/').pop(); }
 
   function readAnswer(generation, items) {
-    const raw = String(generation?.text || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    const complete = raw.match(/^\s*(?:```(?:json)?\s*)?(\{\s*"(?:(?:recommendations)|(?:reply))"[\s\S]*\})/i);
-    const combined = complete ? complete[1] : prefix + raw;
+    const combined = jsonText(generation, pickPrefix);
     let parsed;
     try {
-      parsed = JSON.parse(combined.slice(0, combined.lastIndexOf('}') + 1));
+      parsed = JSON.parse(combined);
     } catch {
       // A worker can omit a closing brace. Recover only complete JSON string fields.
       const pairs = combined.matchAll(/"title"\s*:\s*("(?:[^"\\]|\\.)*")\s*,\s*"reason"\s*:\s*("(?:[^"\\]|\\.)*")/gu);
@@ -100,16 +134,8 @@ const animeChat = (() => {
       if (picks.length === 2) break;
     }
     const reply = typeof parsed.reply === 'string' ? parsed.reply.trim().slice(0, 240) : '';
-    // Some workers put a recommendation in their reply despite requesting structured cards.
-    if (!picks.length && reply) {
-      for (const match of reply.matchAll(/《([^》]+)》/g)) {
-        const work = items.get(titleKey(match[1]));
-        if (work && getWork(work.id) && !picks.some(p => p.id === work.id)) picks.push({id:work.id, title:work.title, reason:''});
-        if (picks.length === 2) break;
-      }
-    }
     if (!picks.length && (parsed.recommendations.some(r => r?.title) || !reply)) throw new Error('这次没有匹配到片库里的作品，可以换个说法或重试。');
-    return {picks, reply, model:String(generation.model || '').split('/').pop()};
+    return {picks, reply, model:modelName(generation)};
   }
 
   function abandon(job) {
@@ -120,11 +146,11 @@ const animeChat = (() => {
     }
   }
 
-  async function request(path, options = {}) {
+  async function request(url, options = {}) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(api + path, {...options, credentials:'omit', referrerPolicy:'no-referrer', signal:controller.signal});
+      const response = await fetch(url, {...options, credentials:'omit', referrerPolicy:'no-referrer', signal:controller.signal});
       if (response.status === 429) throw new Error('免费模型现在请求较多，请稍后重试。');
       if (!response.ok) throw new Error('免费模型暂时无法响应，请稍后重试。');
       return await response.json();
@@ -135,23 +161,25 @@ const animeChat = (() => {
   }
 
   async function hordeGeneration(job, context) {
-    const ticket = await request('async', {method:'POST',
+    const prompt = await hordePrompt(context);
+    if (pending !== job) return;
+    const ticket = await request(api + 'async', {method:'POST',
       headers:{'Content-Type':'application/json', apikey:'0000000000', 'Client-Agent':'Luoban:1.0:https://jinmengyao.pythonanywhere.com'},
-      body:JSON.stringify({models, prompt:hordePrompt(context), params:{max_length:320,
+      body:JSON.stringify({models, prompt, params:{max_length:320,
         max_context_length:4096, temperature:0.45, stop_sequence:['<|im_end|>']}})});
     if (!/^[a-f0-9-]{36}$/i.test(ticket.id || '')) throw new Error('模型服务未接收这条消息，请重试。');
     job.id = ticket.id;
     if (pending !== job) { abandon(job); return; }
     const deadline = Date.now() + 150000;
     while (pending === job && Date.now() < deadline) {
-      const result = await request('status/' + job.id);
+      const result = await request(api + 'status/' + job.id);
       if (pending !== job) return;
       if (result.faulted || result.is_possible === false && !result.done) throw new Error('免费模型暂时没有空闲节点，请稍后重试。');
       if (result.done) {
         job.id = null;
         return result.generations?.[0];
       }
-      status = result.processing ? '正在挑选作品、整理推荐理由…' :
+      status = result.processing ? '正在生成回复…' :
         result.queue_position > 0 ? '正在等候免费模型，队列位置 ' + result.queue_position + '…' : '已排队，正在等待免费模型…';
       paintStatus();
       await new Promise(resolve => setTimeout(resolve, 2400));
@@ -159,36 +187,49 @@ const animeChat = (() => {
     if (pending === job) throw new Error('等候时间较长，可以稍后重试。');
   }
 
+  async function generate(job, context, decode) {
+    if (job.llama) {
+      const result = await accountRequest('anime-recommend', context);
+      if (pending !== job) return;
+      if (!result.fallback) {
+        try { return decode(result); } catch { /* Let the backup model retry this same task. */ }
+      }
+      status = '正在转用备用模型…';
+      paintStatus();
+    }
+    const result = await hordeGeneration(job, context);
+    if (pending !== job) return;
+    try { return decode(result); } catch { throw new Error('模型回复不完整，请重试。'); }
+  }
+
   async function send(question) {
     question = question.trim().slice(0, 360);
     if (pending || !question) return;
-    const items = catalogue();
-    if (!items.size) { status = '片库中暂时没有可推荐的动漫。'; paint(); return; }
     const job = {question, id:null};
     pending = job;
     draft = '';
     retryText = '';
-    status = '正在连接免费模型…';
+    status = '正在回复…';
     paint();
     try {
-      const context = recommendationContext(question, items);
-      const {llama} = await cloudflareAccess.config();
+      job.llama = (await cloudflareAccess.config()).llama;
       if (pending !== job) return;
-      let answer;
-      if (llama) {
-        status = '正在用 Llama 3.3 70B 挑选作品…';
-        paintStatus();
-        const result = await accountRequest('anime-recommend', context);
-        if (pending !== job) return;
-        if (!result.fallback) {
-          try { answer = readAnswer(result, items); } catch { /* Try the other model if the first reply is unusable. */ }
+      const history = conversationHistory();
+      const decision = await generate(job, {phase:'conversation', question, history}, readDecision);
+      if (pending !== job) return;
+      let answer = decision;
+      if (decision.query) {
+        const items = candidates(question, decision.query);
+        if (!items.size) {
+          answer = {reply:'片库里暂时没有更多动漫可以推荐。', picks:[], model:''};
+        } else {
+          status = '正在片库中挑选作品…';
+          paintStatus();
+          const titles = [...items.values()].map(work => work.title).join('｜');
+          answer = await generate(job, {phase:'recommend', question, query:decision.query, history, titles},
+            generation => readAnswer(generation, items));
+          if (pending !== job) return;
         }
-        if (!answer) { status = '正在转用备用 Qwen 模型…'; paintStatus(); }
-      }
-      if (!answer) {
-        const generation = await hordeGeneration(job, context);
-        if (pending !== job) return;
-        answer = readAnswer(generation, items);
       }
       turns.push({question, ...answer});
       turns = turns.slice(-12);

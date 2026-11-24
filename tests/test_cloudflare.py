@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -82,6 +83,22 @@ class CloudflareIntegrationTest(unittest.TestCase):
         self.assertNotIn("turnstileToken", str(body))
         cloud.side_effect = OSError("quota")
         self.assertEqual(self.post("anime-recommend", **self.query).json, {"fallback": True})
+
+    @patch("server.cloudflare.post_json")
+    def test_conversation_reads_prior_reasons_without_requesting_titles(self, cloud):
+        cloud.return_value = self.verdict()
+        self.post("site-entry", turnstileToken="valid")
+        history = [{"用户": "想看运动番", "推荐": [{"片名": "排球少年", "理由": "团队协作"}]}]
+        decision = {"action": "reply", "reply": "因为你提到喜欢团队协作。"}
+        cloud.return_value = {"success": True, "result": {"response": decision}}
+        result = self.post("anime-recommend", phase="conversation", question="为什么给我这个作品",
+                           history=json.dumps(history, ensure_ascii=False))
+        self.assertEqual(json.loads(result.json["text"]), decision)
+        messages = cloud.call_args.args[1]["messages"]
+        self.assertEqual(json.loads(messages[1]["content"]), {"当前消息": "为什么给我这个作品", "最近对话": history})
+        self.assertIn('"action":"reply"', messages[0]["content"])
+        self.assertEqual(self.post("anime-recommend", phase="recommend", question="换一部", history="[]").status_code, 400)
+        self.assertEqual(self.post("anime-recommend", phase="conversation", question="你好", history="null").status_code, 400)
 
     @patch("server.cloudflare.post_json")
     def test_visit_expires_and_requires_new_entry(self, cloud):
