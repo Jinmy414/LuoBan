@@ -116,6 +116,22 @@ class CommunityTest(unittest.TestCase):
         self.assertEqual(self.client.get("/api/history").json["items"],[])
         self.assertEqual(self.guest.get("/api/history").status_code,401)
 
+    def test_bundled_episodes_survive_restart_and_respect_admin_changes(self):
+        key = "animation-6-E7818CE7AFAEE9AB98E6898B"
+        path = "episodes/" + key
+        line = self.guest.get("/api/" + path).json["lines"][0]
+        self.assertEqual([e["label"] for e in line["episodes"]], [f"第{i}集" for i in range(1, 102)])
+        self.as_user(1)
+        update = dict(source=line["source"], revision=line["revision"], title="管理员更新的线路",
+                      episodes=line["episodes"][:1])
+        self.assertEqual(self.post(path, **update).status_code, 200)
+        restarted = create_app(self.app.config).test_client()
+        changed = next(row for row in restarted.get("/api/" + path).json["lines"] if row["source"] == line["source"])
+        self.assertEqual(changed["episodes"], update["episodes"])
+        self.assertEqual(self.post(path, source=line["source"], revision=changed["revision"], action="remove").status_code, 200)
+        restarted = create_app(self.app.config).test_client()
+        self.assertNotIn(line["source"], [r["source"] for r in restarted.get("/api/" + path).json["lines"]])
+
     def test_episode_import_permissions_and_private_resume(self):
         key = next(iter(json.loads((Path(__file__).resolve().parents[1] / "assets/playback.json").read_text())))
         path = "episodes/" + key

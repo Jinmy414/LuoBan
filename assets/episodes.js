@@ -231,13 +231,21 @@ function stopEpisodePlayer() {
   activeEpisodePlayer = null;
 }
 
-function playEpisodes(work, catalogue, initialSource, initialLabel, initialSeconds, afterClose) {
+function playEpisodes(work, catalogue, initialSource, initialLabel, initialSeconds, resumeRequested) {
   stopEpisodePlayer();
   const room = document.getElementById('episodeRoom');
   if (!room) return;
   room.hidden = false;
-  room.innerHTML = `<div class="episode-player-head"><h2>站内播放</h2><button type="button" data-dismiss class="text-link">收起播放器</button></div>
-    <video controls playsinline preload="metadata" aria-label="${escapeHTML(work.title)}"></video>
+  const cover = safeImage(work.coverImage);
+  room.innerHTML = `<div class="episode-player-head"><h2>站内播放</h2><span data-count></span></div>
+    <div class="episode-stage">
+      <button type="button" class="episode-preview" data-play-episodes>
+        ${cover ? `<img src="${escapeHTML(cover)}" alt="">` : ''}
+        <span class="episode-preview-content"><span class="episode-play-icon" aria-hidden="true">▶</span>
+          <strong data-play-label></strong></span>
+      </button>
+      <video hidden controls playsinline preload="none" aria-label="${escapeHTML(work.title)}"></video>
+    </div>
     <div class="episode-player-controls"><label>播放线路<select name="line">${catalogue.lines.map((l) => `<option value="${escapeHTML(l.source)}">${escapeHTML(l.name)}</option>`).join('')}</select></label>
     <label>选集<select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
     <div class="episode-feedback" role="status"></div>`;
@@ -246,7 +254,8 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     picker = room.querySelector('[name=episode]');
   const next = room.querySelector('[data-next]'),
     feedback = room.querySelector('[role=status]');
-  source.value = initialSource;
+  const preview = room.querySelector('[data-play-episodes]');
+  const playLabel = room.querySelector('[data-play-label]');
   let line,
     entry,
     hls = null,
@@ -299,7 +308,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     hls?.destroy();
     hls = null;
     video.removeAttribute('src');
-    video.load();
+    if (!video.hidden) video.load();
     hasPlayed = false;
     recorded = -1;
   }
@@ -325,10 +334,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       if (e.name === 'NotAllowedError') report('轻点视频上的播放键开始。');
     });
   }
-  async function start(chosenLine, label, seconds) {
-    persist();
-    release();
-    const token = ++generation;
+  function select(chosenLine, label, seconds) {
     line = chosenLine;
     entry = line.episodes.find((e) => e.label === label) || line.episodes[0];
     resume = seconds;
@@ -338,18 +344,29 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       .join('');
     picker.value = String(line.episodes.indexOf(entry));
     next.disabled = Number(picker.value) >= line.episodes.length - 1;
+    room.querySelector('[data-count]').textContent = '共 ' + line.episodes.length + ' 集';
+    playLabel.textContent = seconds > 0 ? '续看' + entry.label + ' · ' + episodeTime(seconds) : '播放' + entry.label;
+  }
+  async function start(chosenLine, label, seconds) {
+    persist();
+    release();
+    const token = ++generation;
+    select(chosenLine, label, seconds);
+    preview.hidden = true;
+    video.hidden = false;
     report('正在连接 ' + line.name + '…');
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      attaching = false;
-      video.src = entry.url;
-      tryPlay(token);
-      return;
-    }
     try {
-      const Hls = await loadHlsLibrary();
+      const hasMediaSource = window.MediaSource || window.ManagedMediaSource;
+      const Hls = hasMediaSource ? await loadHlsLibrary() : null;
       if (token !== generation || stopped) return;
       if (!Hls?.isSupported()) {
-        report('此浏览器无法播放 HLS，请选择下方的平台入口。');
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          attaching = false;
+          video.src = entry.url;
+          tryPlay(token);
+        } else {
+          report('此浏览器无法播放 HLS，请选择下方的平台入口。');
+        }
         return;
       }
       hls = new Hls({ capLevelToPlayerSize: true });
@@ -391,9 +408,13 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   video.onerror = () => {
     if (!stopped && !attaching && video.error) report('播放失败，可重试或切换线路。', true);
   };
+  function choose(chosenLine, label, seconds) {
+    if (preview.hidden) start(chosenLine, label, seconds);
+    else select(chosenLine, label, seconds);
+  }
   const advance = () => {
     const e = line.episodes[Number(picker.value) + 1];
-    if (e) start(line, e.label, 0);
+    if (e) choose(line, e.label, 0);
   };
   video.onended = () => {
     persist();
@@ -402,24 +423,19 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   source.onchange = () => {
     const chosen = catalogue.lines.find((l) => l.source === source.value);
     const match = chosen.episodes.find((e) => e.label === entry.label);
-    start(chosen, match?.label || chosen.episodes[0].label, match ? Math.floor(video.currentTime) : 0);
+    choose(chosen, match?.label || chosen.episodes[0].label, match ? (Math.floor(video.currentTime) || resume) : 0);
   };
-  picker.onchange = () => start(line, line.episodes[Number(picker.value)].label, 0);
+  picker.onchange = () => choose(line, line.episodes[Number(picker.value)].label, 0);
   next.onclick = advance;
-  room.querySelector('[data-dismiss]').onclick = async () => {
-    stopEpisodePlayer();
-    await afterClose();
-    document.querySelector('[data-play-episodes]')?.focus();
+  select(catalogue.lines.find((l) => l.source === initialSource) || catalogue.lines[0], initialLabel, initialSeconds || 0);
+  preview.onclick = () => {
+    start(line, entry.label, resume);
+    video.focus({ preventScroll: true });
   };
-  start(
-    catalogue.lines.find((l) => l.source === initialSource) || catalogue.lines[0],
-    initialLabel,
-    initialSeconds || 0
-  );
-  room.scrollIntoView({
-    block: 'start',
-    behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
-  });
+  if (resumeRequested) {
+    preview.click();
+    room.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }
 }
 
 async function loadEpisodeAccess(work, target) {
@@ -438,26 +454,12 @@ async function loadEpisodeAccess(work, target) {
         ) || catalogue.lines[0];
       const resume =
         progress && line?.source === progress.source && line.episodes.some((e) => e.label === progress.label);
-      access.innerHTML = `${line ? '<div><h2>站内选集</h2><p></p></div><button type="button" class="button button-primary" data-play-episodes></button>' : ''}${catalogue.providers ? '<button type="button" class="studio-action" data-import>导入分集</button>' : ''}`;
+      access.innerHTML = catalogue.providers ? '<button type="button" class="studio-action" data-import>导入分集</button>' : '';
+      const resumeRequested = requestedResume === work.id;
+      if (resumeRequested) requestedResume = null;
       if (line) {
-        access.querySelector('p').textContent = resume
-          ? progress.label + ' · ' + episodeTime(progress.seconds)
-          : line.name + ' · ' + line.episodes.length + ' 集';
-        const play = access.querySelector('[data-play-episodes]');
-        play.textContent = resume ? '继续观看' : '站内播放';
-        play.onclick = () =>
-          playEpisodes(
-            work,
-            catalogue,
-            line.source,
-            resume ? progress.label : line.episodes[0].label,
-            resume ? progress.seconds : 0,
-            refresh
-          );
-        if (requestedResume === work.id) {
-          requestedResume = null;
-          play.click();
-        }
+        playEpisodes(work, catalogue, line.source, resume ? progress.label : line.episodes[0].label,
+          resume ? progress.seconds : 0, resumeRequested);
       }
       const opener = access.querySelector('[data-import]');
       if (opener)

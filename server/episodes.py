@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS episode_progress (
  user_id INTEGER NOT NULL, work_id TEXT NOT NULL, source TEXT NOT NULL, label TEXT NOT NULL,
  seconds INTEGER NOT NULL, PRIMARY KEY(user_id,work_id)
 );
+CREATE TABLE IF NOT EXISTS installed_episode_lines (
+ work_id TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY(work_id,source)
+);
 """
 
 SOURCES = {
@@ -64,6 +67,21 @@ def validated_catalogue(data):
         labels.add(label.strip())
         result.append({"label": label.strip(), "url": url})
     return title.strip(), json.dumps(result, ensure_ascii=False, separators=(",", ":"))
+
+
+def install_catalogues(conn, path):
+    """Install each bundled line once. Later edits and removals belong to the administrator."""
+    catalogues = json.loads(path.read_text(encoding="utf-8"))
+    with conn:
+        for line in catalogues:
+            key = (line["work"], line["source"])
+            installed = conn.execute("INSERT OR IGNORE INTO installed_episode_lines VALUES (?,?)", key)
+            if not installed.rowcount:
+                continue
+            entries = [dict(label=f"第{i}集", url=url) for i, url in enumerate(line["urls"], 1)]
+            title, body = validated_catalogue(dict(title=line["title"], episodes=entries))
+            conn.execute("INSERT OR IGNORE INTO episode_lines VALUES (?,?,?,?,?)",
+                         (*key, secrets.token_hex(8), title, body))
 
 
 def mount(app, db, active_user, admin, now, fail, seed_ids):

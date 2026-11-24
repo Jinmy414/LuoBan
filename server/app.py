@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import community
+from . import community, episodes
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPORTED = set("罗硬金文鹏龙飞鲨任虎马")
@@ -114,6 +114,7 @@ def create_app(overrides=None):
     Path(cfg["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(cfg["DATABASE"], timeout=10)) as initial:
         initial.executescript(SCHEMA + community.SCHEMA)
+        episodes.install_catalogues(initial, ROOT / "server" / "episode-catalogues.json")
 
     def db():
         if "db" not in g:
