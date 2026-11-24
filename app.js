@@ -192,25 +192,40 @@ function posterKey(value) {
   return Object.keys(POSTER_OPTIONS).find(key => key === value || POSTER_OPTIONS[key] === value) || 'mint';
 }
 
-function coverMarkup(work, extraClass = '') {
+const homeCoverObserver = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
+  for (const { isIntersecting, target } of entries) {
+    if (!isIntersecting || !target.isConnected || !target.dataset.coverSrc) continue;
+    target.src = target.dataset.coverSrc;
+    delete target.dataset.coverSrc;
+    homeCoverObserver.unobserve(target);
+  }
+}, { rootMargin: '200px 0px' }) : null;
+
+function observeHomeCovers(container) {
+  container.querySelectorAll('img[data-cover-src]').forEach(image => homeCoverObserver.observe(image));
+}
+
+function coverMarkup(work, defer = false) {
   const image = safeImage(work.coverImage);
-  return `<div class="work-cover ${extraClass} ${image ? 'has-image' : ''}" data-poster="${posterKey(work.poster)}">
-    ${image ? `<img class="cover-photo" src="${escapeHTML(image)}" alt="">` : ''}
+  const attribute = defer && homeCoverObserver ? 'data-cover-src' : 'src';
+  return `<div class="work-cover ${image ? 'has-image' : ''}" data-poster="${posterKey(work.poster)}">
+    ${image ? `<img class="cover-photo" ${attribute}="${escapeHTML(image)}" decoding="async" alt="">` : ''}
     <span class="cover-symbol">${escapeHTML(work.title.slice(0, 1))}</span>
     <span class="cover-title">${escapeHTML(work.title)}</span>
   </div>`;
 }
 
 function workCard(work, feature = false) {
+  const cover = coverMarkup(work, currentRoute() === 'home');
   const tagHTML = work.types.slice(0, 3).map(type => `<span class="type-tag">${escapeHTML(type)}</span>`).join('');
   const rank = workRank(work);
   const rankTag = rank === 'hot' ? '<span class="type-tag hot">热门</span>' : rank === 'cold' ? '<span class="type-tag cold">冷门</span>' : '';
   if (feature) return `<a class="feature-card" href="#work-${escapeHTML(work.id)}">
-    ${coverMarkup(work)}
+    ${cover}
     <div class="feature-info"><strong>${escapeHTML(work.title)}</strong><div class="feature-meta"><span>${displayYear(work.year)} · ${escapeHTML(work.region)}</span><span class="rating">${formatRating(displayRating(work), work.votes)}</span></div></div>
   </a>`;
   return `<a class="work-card" href="#work-${escapeHTML(work.id)}">
-    ${coverMarkup(work)}
+    ${cover}
     <div class="feature-info"><strong>${escapeHTML(work.title)}</strong><div class="feature-meta"><span>${displayYear(work.year)} · ${escapeHTML(work.region)}</span><span class="rating">${formatRating(displayRating(work), work.votes)}</span></div><div class="type-list">${tagHTML}${rankTag}</div></div>
   </a>`;
 }
@@ -342,6 +357,7 @@ function autoTags(work) {
 }
 
 function renderApp() {
+  homeCoverObserver?.disconnect();
   stopEpisodePlayer();
   closeStudioDialogs();
   renderHeader();
@@ -352,6 +368,7 @@ function renderApp() {
     const controls = [...app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')];
     const focusIndex = controls.indexOf(document.activeElement);
     app.innerHTML = renderHome();
+    observeHomeCovers(app);
     if (focusIndex >= 0) app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')[focusIndex]?.focus({ preventScroll: true });
   }
   else if (route === 'profile') app.innerHTML = currentUser() ? renderProfile() : loginRequired('登录后查看你的罗瓣', '收藏三部最爱作品，再留下三条最想被看见的评论。');
@@ -472,7 +489,9 @@ document.addEventListener('click', async event => {
   if (target.closest('[data-more]')) {
     const items = filteredWorks().slice(shownCount, shownCount + 18);
     shownCount += items.length;
-    document.querySelector('.works-grid').insertAdjacentHTML('beforeend', items.map(w => workCard(w)).join(''));
+    const grid = document.querySelector('.works-grid');
+    grid.insertAdjacentHTML('beforeend', items.map(w => workCard(w)).join(''));
+    observeHomeCovers(grid);
     if (shownCount >= filteredWorks().length) target.closest('button').remove();
     if (items.length) document.querySelectorAll('.works-grid > a')[shownCount - items.length]?.focus({ preventScroll: true });
     return;

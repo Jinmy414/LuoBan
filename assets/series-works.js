@@ -228,5 +228,85 @@ window.LUOBAN_SERIES_WORKS = [
     "sourceUrl": "https://www.primevideo.com/detail/0OT6JCWNTHGSU7KAL5EBV7UJ5P",
     "comments": [],
     "userRatings": {}
+  },
+  {
+    "id": "natural-high-s1",
+    "title": "现在就出发 第一季",
+    "year": 2023,
+    "region": "中国",
+    "types": [
+      "综艺"
+    ],
+    "rating": null,
+    "votes": 0,
+    "ratingSum": 0,
+    "poster": "",
+    "coverImage": "assets/covers/natural-high-s1.jpg",
+    "summary": "沈腾和朋友们把聚会搬到户外，在营地做饭、玩水上游戏，也为一场收官联欢会排练节目。",
+    "createdBy": "罗瓣社区",
+    "sourceName": "腾讯视频 · WeTV",
+    "sourceUrl": "https://wetv.vip/zh-cn/album/61zmyzwnb06kbxz",
+    "comments": [],
+    "userRatings": {}
+  },
+  {
+    "id": "natural-high-s2",
+    "title": "现在就出发 第二季",
+    "year": 2024,
+    "region": "中国",
+    "types": [
+      "综艺"
+    ],
+    "rating": null,
+    "votes": 0,
+    "ratingSum": 0,
+    "poster": "",
+    "coverImage": "assets/covers/natural-high-s2.jpg",
+    "summary": "出发团再度集结，把旅途变成一连串即兴游戏。一句粤语、一次躲猫猫，都能让熟人之间的默契露出破绽。",
+    "createdBy": "罗瓣社区",
+    "sourceName": "腾讯视频 · WeTV",
+    "sourceUrl": "https://wetv.vip/zh-cn/album/o5n26s4ms078t9p",
+    "comments": [],
+    "userRatings": {}
+  },
+  {
+    "id": "natural-high-s3",
+    "title": "现在就出发 第三季",
+    "year": 2025,
+    "region": "中国",
+    "types": [
+      "综艺"
+    ],
+    "rating": null,
+    "votes": 0,
+    "ratingSum": 0,
+    "poster": "",
+    "coverImage": "assets/covers/natural-high-s3.jpg",
+    "summary": "这一季，出发团来到沈腾的家乡。老朋友边走边聊，把家乡旧事、方言和即兴游戏带进了旅程。",
+    "createdBy": "罗瓣社区",
+    "sourceName": "腾讯视频 · WeTV",
+    "sourceUrl": "https://wetv.vip/zh-cn/album/iaqyfismwfgbyjb",
+    "comments": [],
+    "userRatings": {}
+  },
+  {
+    "id": "natural-high-s4",
+    "title": "现在就出发 第四季",
+    "year": 2026,
+    "region": "中国",
+    "types": [
+      "综艺"
+    ],
+    "rating": null,
+    "votes": 0,
+    "ratingSum": 0,
+    "poster": "",
+    "coverImage": "assets/covers/natural-high-s4.jpg",
+    "summary": "出发团从三亚的海边启程。沈腾、白敬亭等新老搭档把竞拍、猜歌和推理游戏带到了旅行途中。",
+    "createdBy": "罗瓣社区",
+    "sourceName": "腾讯视频 · WeTV",
+    "sourceUrl": "https://wetv.vip/zh-cn/album/f67kvuwbkdpu68l",
+    "comments": [],
+    "userRatings": {}
   }
 ];
