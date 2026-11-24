@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import community, episodes
+from . import community, episodes, profiles
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPORTED = set("罗硬金文鹏龙飞鲨任虎马")
@@ -113,7 +113,7 @@ def create_app(overrides=None):
         raise ValueError("SMTP_SECURITY must be starttls or ssl (plain only for local testing)")
     Path(cfg["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(cfg["DATABASE"], timeout=10)) as initial:
-        initial.executescript(SCHEMA + community.SCHEMA)
+        initial.executescript(SCHEMA + community.SCHEMA + profiles.SCHEMA)
         episodes.install_catalogues(initial, ROOT / "server" / "episode-catalogues.json")
 
     def db():
@@ -130,7 +130,9 @@ def create_app(overrides=None):
     @app.before_request
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
-            if request.path in {"/api/account", "/api/submissions", "/api/reviews"} or request.path.startswith("/api/episodes/"):
+            if request.path == "/api/member-showcase" or request.path.startswith("/api/discussion/"):
+                request.max_content_length = 320_000
+            elif request.path in {"/api/account", "/api/submissions", "/api/reviews"} or request.path.startswith("/api/episodes/"):
                 request.max_content_length = 3_000_000
             if request.headers.get("Origin") != cfg["PUBLIC_ORIGIN"] or not request.is_json:
                 return fail("请从罗瓣网站重新打开此页面。", 403)
@@ -388,7 +390,7 @@ def create_app(overrides=None):
             rows = conn.execute("SELECT id, username, email FROM accounts ORDER BY username")
             return jsonify(users=[public_user(row) for row in rows])
 
-    community.mount(app, db, active_user, public_user, now, fail, ROOT)
+    community.mount(app, db, active_user, public_user, now, fail, ROOT, IMPORTED)
 
     @app.get("/")
     def index():

@@ -3,6 +3,7 @@ const posterNames = { mint: '青苔绿', dusk: '晚霞橘', sky: '晴空蓝', la
 const submissionStatus = {pending: '待审核', approved: '已发布', rejected: '已退回'};
 let avatarRevision = 0;
 let publishedRevision = 0;
+let lastDiscussion = null;
 let playbackOverrides = {};
 
 function avatarURL(name) {
@@ -12,9 +13,13 @@ function closeStudioDialogs() {
   document.querySelectorAll('.studio-dialog[open]').forEach(dialog => dialog.close());
 }
 function profileComments(username) {
-  return state.works.flatMap(work => work.comments.filter(c => c.user === username)
+  const local = state.works.flatMap(work => work.comments.filter(c => c.user === username)
     .map(comment => ({...comment, work, key: work.id + ':' + comment.id})))
     .sort((a, b) => b.date.localeCompare(a.date));
+  const remote = (getUser(username)?.featuredComments || []).map(c => ({
+    ...c, work:getWork(c.workId), key:c.workId + ':' + c.id, likes:0
+  })).filter(c => c.work && !local.some(item => item.key === c.key));
+  return [...local, ...remote];
 }
 function thumb(work) {
   const url = safeImage(work.coverImage);
@@ -24,22 +29,23 @@ function thumb(work) {
 function profileTool(kind, label) {
   return `<button type="button" class="studio-action" data-profile-tool="${kind}">${label}</button>`;
 }
-function renderProfile(username = activeAccount?.username) {
-  const user = getUser(username);
-  const own = currentUser()?.username === username;
-  const favorites = (user?.favoriteIds || []).map(getWork).filter(Boolean).slice(0, 3);
-  const allComments = profileComments(username);
-  const comments = allComments.filter(item => user?.featuredCommentIds?.includes(item.key));
-  const created = state.works.filter(work => work.createdBy === username);
+function renderProfile() {
+  const user = currentUser();
+  const favorites = user.favoriteIds.map(getWork).filter(Boolean);
+  const allComments = profileComments(user.username);
+  const comments = allComments.filter(item => user.featuredCommentIds.includes(item.key));
+  const created = state.works.filter(work => !work.shared && work.createdBy === user.username);
   return `<section class="studio-page">
-    <div class="profile-banner"><img class="identity-image" src="${avatarURL(username)}" alt=""><div><h1>${own ? '我的罗瓣' : escapeHTML(username) + '的罗瓣'}</h1><p>${own ? escapeHTML(username) + ' · ' : ''}收到 ${allComments.reduce((sum, c) => sum + c.likes, 0)} 个赞</p></div>${own ? profileTool('account','编辑个人信息') : ''}</div>
-    <section class="studio-panel"><div class="panel-heading"><div><h2>三部最爱</h2><p>${favorites.length} / 3 部</p></div>${own ? profileTool('favorites','选择最爱') : ''}</div>
-    <div class="favorite-shelf">${favorites.map(work => workCard(work, true)).join('')}${own && favorites.length < 3 ? '<button class="favorite-slot" type="button" data-profile-tool="favorites"><span aria-hidden="true">♡</span>添加最爱作品</button>' : ''}</div>${!own && !favorites.length ? '<p class="studio-empty">还没有展示最爱作品。</p>' : ''}</section>
-    ${own ? '<section class="studio-panel"><div class="panel-heading"><h2>观看记录</h2><small>仅自己可见</small></div><div id="watchHistory">正在读取…</div></section>' : ''}
-    <div class="profile-columns"><section class="studio-panel"><div class="panel-heading"><h2>展示评论</h2>${own ? profileTool('comments','选择评论') : ''}</div>${comments.map(c => `<article class="profile-quote"><p>${escapeHTML(c.text)}</p><a href="#work-${escapeHTML(c.work.id)}">《${escapeHTML(c.work.title)}》</a></article>`).join('') || '<p class="studio-empty">还没有展示评论。</p>'}</section>
-    <section class="studio-panel"><div class="panel-heading"><h2>创建的作品</h2>${own ? '<a class="studio-action" href="#create">创建作品</a>' : ''}</div>
-    ${own ? '<div id="mySubmissions" aria-live="polite">正在读取投稿…</div>' : ''}
-    ${created.filter(w => !own || !w.shared).map(w => `<a class="studio-row" href="#work-${escapeHTML(w.id)}">${thumb(w)}<span>${escapeHTML(w.title)}</span><small>${displayYear(w.year)}</small></a>`).join('')}${!own && !created.length ? '<p class="studio-empty">还没有发布作品。</p>' : ''}</section></div></section>`;
+    <div class="profile-banner"><img class="identity-image" src="${avatarURL(user.username)}" alt=""><div><h1>我的罗瓣</h1>
+      <p>${escapeHTML(user.username)} · 收到 ${allComments.reduce((sum, c) => sum + c.likes, 0)} 个赞</p></div>${profileTool('account','编辑个人信息')}</div>
+    <a class="public-profile-link" href="${memberHref(user.username, user.accountId)}">查看我的公开主页 ›</a>
+    <section class="studio-panel"><div class="panel-heading"><div><h2>三部最爱</h2><p>${favorites.length} / 3 部</p></div>${profileTool('favorites','选择最爱')}</div>
+    <div class="favorite-shelf">${favorites.map(work => workCard(work, true)).join('')}${favorites.length < 3 ? '<button class="favorite-slot" type="button" data-profile-tool="favorites"><span aria-hidden="true">♡</span>添加最爱作品</button>' : ''}</div></section>
+    <section class="studio-panel"><div class="panel-heading"><h2>观看记录</h2><small>仅自己可见</small></div><div id="watchHistory">正在读取…</div></section>
+    <div class="profile-columns"><section class="studio-panel"><div class="panel-heading"><h2>展示评论</h2>${profileTool('comments','选择评论')}</div>${comments.map(c => `<article class="profile-quote">${commentScoreBadge(c.work,user.username,c.score)}<p>${escapeHTML(c.text)}</p><a href="#work-${escapeHTML(c.work.id)}">《${escapeHTML(c.work.title)}》</a></article>`).join('') || '<p class="studio-empty">还没有展示评论。</p>'}</section>
+    <section class="studio-panel"><div class="panel-heading"><h2>创建的作品</h2><a class="studio-action" href="#create">创建作品</a></div>
+    <div id="mySubmissions" aria-live="polite">正在读取投稿…</div>
+    ${created.map(w => `<a class="studio-row" href="#work-${escapeHTML(w.id)}">${thumb(w)}<span>${escapeHTML(w.title)}</span><small>${displayYear(w.year)}</small></a>`).join('')}</section></div></section>`;
 }
 function openSheet(title, content, opener) {
   const dialog = document.createElement('dialog');
@@ -114,15 +120,17 @@ function openPicker(kind, opener) {
       search.setAttribute('aria-activedescendant',option.id);
     } else if (event.key === 'Enter') { event.preventDefault(); toggle(results[Math.max(0,active)].id); }
   });
-  dialog.addEventListener('click', event => {
+  dialog.addEventListener('click', async event => {
     const option = event.target.closest('[data-pick]');
     if (option) toggle(option.dataset.pick);
     if (event.target.closest('.more-picks')) { limit += 25; draw(); }
     if (event.target.closest('[data-confirm]')) {
       if (currentUser() !== user) { dialog.close(); return; }
-      const previous = user[property];
-      user[property] = [...chosen];
-      try { saveState(); } catch { user[property] = previous; message.textContent = '保存失败，请检查浏览器存储。'; return; }
+      const confirm = dialog.querySelector('[data-confirm]');
+      confirm.disabled = true;
+      try {
+        await saveShowcase(user, favorites ? {favoriteIds:[...chosen]} : {featuredComments:featuredSelection(user, [...chosen])});
+      } catch (e) { message.textContent = e.message; confirm.disabled = false; return; }
       dialog.close(); refreshProfileAfterSheet(); showToast('已保存');
     }
   });
@@ -305,7 +313,7 @@ function setupWorkForm(form, original = {}) {
 async function refreshPublished(redraw = true) {
   const revision = ++publishedRevision;
   try {
-    const {works, playback = {},memberNames = {}} = await accountRequest('works');
+    const {works, playback = {},memberNames = {}, discussion = {}} = await accountRequest('works');
     if (revision !== publishedRevision) return;
     const changedSources = JSON.stringify(playbackOverrides) !== JSON.stringify(playback);
     playbackOverrides = playback;
@@ -322,12 +330,16 @@ async function refreshPublished(redraw = true) {
       }
     }
     const prior = state.works.filter(w => w.shared);
-    if (!changedSources && !renamed && works.length === prior.length && works.every(w => { const old = getWork(w.id); return old?.version === w.version && old.createdBy === w.createdBy; })) return;
+    const discussionKey = JSON.stringify(discussion);
+    const changedDiscussion = discussionKey !== lastDiscussion;
+    if (!changedDiscussion && !changedSources && !renamed && works.length === prior.length && works.every(w => { const old = getWork(w.id); return old?.version === w.version && old.createdBy === w.createdBy && old.authorId === w.authorId; })) return;
     const merged = works.map(w => {
       const old = getWork(w.id);
       return {...{rating:null,votes:0,ratingSum:0,comments:[],userRatings:{}}, ...old, ...w, shared:true,poster:POSTER_OPTIONS[w.poster] || POSTER_OPTIONS.mint};
     });
     state.works = [...merged, ...state.works.filter(w => !w.shared)];
+    mergeDiscussion(discussion);
+    lastDiscussion = discussionKey;
     refreshFeatured();
     try { saveState(); } catch { /* Published works remain available in memory. */ }
     if (redraw && !document.querySelector('dialog[open],#workForm,#commentForm:focus-within') && !currentRoute().startsWith('submission-') && !currentRoute().startsWith('review-')) renderApp();
@@ -337,7 +349,7 @@ async function renderEditorRoles(target) {
   function draw(users) {
     target.innerHTML = users.map(user => {
       const owner = user.role === 'superadmin', editor = user.role === 'admin';
-      return `<div class="studio-row"><span><strong>${escapeHTML(user.username)}</strong><small>${owner ? '超级管理员' : editor ? '管理员' : '普通用户'}</small></span>${owner ? '' : `<button class="studio-action" data-user-id="${user.id}" data-grant="${!editor}">${editor ? '收回权限' : '设为管理员'}</button>`}</div>`;
+      return `<div class="studio-row"><span><strong>${memberLink(user.username, user.id)}</strong><small>${owner ? '超级管理员' : editor ? '管理员' : '普通用户'}</small></span>${owner ? '' : `<button class="studio-action" data-user-id="${user.id}" data-grant="${!editor}">${editor ? '收回权限' : '设为管理员'}</button>`}</div>`;
     }).join('');
   }
   try {
@@ -357,6 +369,11 @@ async function renderEditorRoles(target) {
   } catch (error) { target.textContent = error.message; }
 }
 async function loadStudioSections(route) {
+  const memberArea = document.getElementById('memberArea');
+  if (memberArea) {
+    if (route === 'members') loadMemberDirectory(memberArea);
+    else loadPublicMember(memberArea, route);
+  }
   const history = document.getElementById('watchHistory');
   if (history) loadWatchHistory(history);
   const play = document.getElementById('playbackLinks');
@@ -392,7 +409,8 @@ async function loadStudioSections(route) {
     target.innerHTML = items.map(item => {
       const name = escapeHTML(item.title);
       const href = reviewing ? 'review-' + item.id : item.status === 'approved' ? 'work-' + item.id : 'submission-' + item.id;
-      return `<a class="studio-row" href="#${href}">${thumb(item)}<span><strong>${name}</strong><small>${reviewing ? escapeHTML(item.createdBy) + ' 提交' : escapeHTML(item.reason || submissionStatus[item.status])}</small></span><b class="row-link">${reviewing ? '审核' : item.status === 'approved' ? '查看' : '修改'} ›</b></a>`;
+      if (reviewing) return `<div class="studio-row">${thumb(item)}<span><strong><a href="#${href}">${name}</a></strong><small>${memberLink(item.createdBy,item.authorId)} 提交</small></span><a class="row-link" href="#${href}">审核 ›</a></div>`;
+      return `<a class="studio-row" href="#${href}">${thumb(item)}<span><strong>${name}</strong><small>${escapeHTML(item.reason || submissionStatus[item.status])}</small></span><b class="row-link">${item.status === 'approved' ? '查看' : '修改'} ›</b></a>`;
     }).join('') || `<p class="studio-empty">${reviewing ? '当前没有待审核的作品。' : '还没有投稿。'}</p>`;
   } catch (error) {
     if (!target.isConnected) return;
@@ -401,14 +419,18 @@ async function loadStudioSections(route) {
     retry.onclick = () => loadStudioSections(route); target.append(retry);
   }
 }
-document.addEventListener('click', event => {
+document.addEventListener('click', async event => {
   const opener = event.target.closest('[data-profile-tool]');
   if (!opener || !currentUser()) return;
   if (opener.dataset.profileTool === 'account') openProfileAccount(opener);
-  else openPicker(opener.dataset.profileTool,opener);
+  else {
+    const user = currentUser();
+    try { await ensureOwnShowcase(user); } catch (e) { showToast(e.message); return; }
+    if (currentUser() === user && opener.isConnected) openPicker(opener.dataset.profileTool,opener);
+  }
 });
 window.addEventListener('hashchange', () => {
-  if (/^(home|admin|profile|work-)/.test(currentRoute())) refreshPublished();
+  if (/^(home|admin|profile|member-|work-)/.test(currentRoute())) refreshPublished();
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {

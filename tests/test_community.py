@@ -34,6 +34,83 @@ class CommunityTest(unittest.TestCase):
     def as_user(self, user):
         self.client.set_cookie(COOKIE, str(user))
 
+    def test_comment_scores_replies_and_persistent_notices(self):
+        self.as_user(2)
+        self.post("submissions", **self.data)
+        self.as_user(1)
+        self.post("reviews", **{**self.data, "version":1}, action="approve")
+        key = self.data["id"]
+        path = "discussion/" + key
+        def comment(actor, n, text, parent=None):
+            self.as_user(actor)
+            client_id = f"00000000-0000-0000-0000-{n:012d}"
+            self.assertEqual(self.post(path, action="comment", accountId=actor, id=client_id,
+                                       text=text, replyTo=parent).status_code, 200)
+            return f"c-{actor}-{client_id}"
+        first = comment(2, 1, "作者的评论")
+        def inbox(actor):
+            self.as_user(actor)
+            return self.client.get("/api/comment-notices").json["items"]
+        self.assertEqual(inbox(2), [])
+        reply = comment(3, 2, "同意", first)
+        comment(3, 2, "同意", first)
+        second = comment(3, 3, "补充")
+        self.assertEqual(self.guest.get("/api/comment-notices").status_code, 401)
+        self.assertEqual(inbox(3), [])
+        self.assertEqual(self.post(path, action="rate", accountId=3, score=0).status_code, 200)
+        activities = lambda: self.guest.get("/api/works").json["discussion"][key]
+        self.assertEqual(activities()["commentScores"], {"user3":0})
+        self.assertEqual(self.post(path, action="rate", accountId=3, score=8.5).status_code, 200)
+        self.assertEqual(self.post(path, action="rate", accountId=3, score=8.8).status_code, 400)
+        self.assertEqual(activities()["ratingSum"], 8.5)
+        self.assertEqual(next(c for c in activities()["comments"] if c["id"] == reply)["replyTo"]["authorId"], 2)
+        self.assertEqual([(i["id"],i["kind"]) for i in inbox(2)], [(second,"work"),(reply,"reply")])
+        self.as_user(3)
+        self.post("comment-notices", accountId=3, commentId=second)
+        self.assertEqual(len(inbox(2)), 2)
+        self.post("comment-notices", accountId=2, commentId=second)
+        self.assertEqual([i["id"] for i in inbox(2)], [reply])
+        comment(1, 4, "回访", second)
+        self.assertEqual(inbox(3)[0]["kind"], "reply")
+        self.assertEqual(inbox(2)[0]["kind"], "work")
+        self.assertEqual(self.post(path, action="remove", accountId=2, id=reply).status_code, 403)
+        self.as_user(1)
+        self.post(path, action="remove", accountId=1, id=reply)
+        self.assertNotIn(reply, [i["id"] for i in inbox(2)])
+        self.assertNotIn(reply, [c["id"] for c in activities()["comments"]])
+
+    def test_public_member_profiles_and_owner_selections(self):
+        key = "animation-6-E7818CE7AFAEE9AB98E6898B"
+        self.as_user(2)
+        self.post("submissions", **self.data)
+        comment = dict(id="c-1234", text="最喜欢这一幕", workId=key)
+        self.assertEqual(self.post("member-showcase", accountId=2, favoriteIds=[self.data["id"]]).status_code, 400)
+        self.assertEqual(self.post("member-showcase", accountId=2, favoriteIds=[key]).status_code, 200)
+        self.assertEqual(self.post("member-showcase", accountId=2, initialize=True, favoriteIds=[],
+                                   featuredComments=[comment]).json["favoriteIds"], [key])
+        profile = self.guest.get("/api/members/id/2").json
+        self.assertEqual(profile, dict(id=2, username="user2", original=None, hasAvatar=False, workIds=[],
+                                      favoriteIds=[key], featuredComments=[comment]))
+        self.assertEqual(self.guest.get("/api/members/name/USER2").json, profile)
+        self.assertEqual(self.guest.get("/api/members/name/不存在").status_code, 404)
+        self.assertEqual(self.guest.get("/api/members/name/罗").json["username"], "罗")
+        self.assertEqual(self.guest.post("/api/member-showcase", json=dict(accountId=2,favoriteIds=[]),
+                                        headers={"Origin":"https://example.test"}).status_code, 403)
+        self.as_user(1)
+        self.assertEqual(self.post("member-showcase", accountId=2, favoriteIds=[]).status_code, 403)
+        self.assertEqual(self.post("reviews", **{**self.data, "version":1}, action="approve").status_code, 200)
+        self.assertEqual(self.guest.get("/api/members/id/2").json["workIds"], [self.data["id"]])
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            conn.execute("INSERT INTO member_claims VALUES ('罗',NULL,0,2)")
+            conn.execute("UPDATE accounts SET username='新名字',name_key='新名字' WHERE id=2")
+        self.assertEqual(self.guest.get("/api/members/name/罗").json["favoriteIds"], [key])
+        members = self.guest.get("/api/members").json["members"]
+        self.assertFalse(any(m["username"] == "罗" for m in members))
+        self.assertEqual(next(m for m in members if m["original"] == "罗")["username"], "新名字")
+        self.as_user(2)
+        self.assertEqual(self.post("member-showcase", accountId=2, favoriteIds=[]).json["featuredComments"], [comment])
+        self.assertEqual(self.post("member-showcase", accountId=2, initialize=True, favoriteIds=[key]).json["favoriteIds"], [])
+
     def test_private_drafts_roles_review_edits_and_rejection(self):
         self.as_user(2)
         self.assertEqual(self.post("submissions", **self.data, status="approved").json["status"], "pending")

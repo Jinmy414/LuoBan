@@ -15,7 +15,9 @@ async function accountRequest(path, data) {
     throw new Error('连接失败，请检查网络后重试。');
   }
   if (!response.headers.get('content-type')?.includes('application/json')) {
-    throw new Error('此站点尚未连接账号服务，暂时只能浏览作品。');
+    const error = new Error('此站点尚未连接账号服务，暂时只能浏览作品。');
+    if (response.status === 404 || response.ok) error.code = 'STATIC_SITE';
+    throw error;
   }
   const result = await response.json();
   if (!response.ok) {

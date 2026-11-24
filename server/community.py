@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from flask import Response, jsonify, request, send_from_directory
 from PIL import Image, ImageOps
 
-from . import episodes
+from . import discussion, episodes, profiles
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS playback_overrides (work_id TEXT PRIMARY KEY, url TEXT NOT NULL);
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS contributions (
 );
 CREATE INDEX IF NOT EXISTS review_queue ON contributions(status, updated);
 CREATE INDEX IF NOT EXISTS author_submissions ON contributions(author_id, updated);
-""" + episodes.SCHEMA
+""" + episodes.SCHEMA + discussion.SCHEMA
 WORK_ID = re.compile(r"entry-[0-9a-f]{32}")
 POSTERS = {"mint", "dusk", "sky", "lavender", "lemon", "ink"}
 
@@ -105,20 +105,23 @@ def work_fields(data, admin, previous):
                 poster=poster, coverImage=cover, summary=summary)
 
 
-def mount(app, db, active_user, public_user, now, fail, root):
+def mount(app, db, active_user, public_user, now, fail, root, imported):
     catalogue = json.loads((root / "assets" / "playback.json").read_text())
-    seed_ids = {work["id"] for work in json.loads((root / "assets" / "animation-works.js").read_text().partition(" = ")[2].strip().rstrip(";"))}
+    seed_works = json.loads((root / "assets" / "animation-works.js").read_text().partition(" = ")[2].strip().rstrip(";"))
+    seed_ids = {work["id"] for work in seed_works}
 
     def admin(user):
         return bool(user and public_user(user)["role"] in {"admin", "superadmin"})
 
+    public_activity = discussion.mount(app, db, active_user, admin, fail, now, seed_works)
     episodes.mount(app, db, active_user, admin, now, fail, seed_ids)
+    profiles.mount(app, db, active_user, fail, imported, seed_ids)
 
     def entry(row, public=False):
         fields = json.loads(row["live"] if public else row["draft"])
         if public and fields["coverImage"].startswith("data:"):
             fields["coverImage"] = f"/api/works/{row['id']}/cover?v={row['version']}"
-        item = dict(fields, id=row["id"], createdBy=row["username"], version=row["version"])
+        item = dict(fields, id=row["id"], createdBy=row["username"], authorId=row["author_id"], version=row["version"])
         if not public:
             item.update(status=row["status"], reason=row["reason"])
         return item
@@ -140,7 +143,7 @@ def mount(app, db, active_user, public_user, now, fail, root):
         aliases = {r["name"]: r["username"] for r in db().execute("""
             SELECT name,username FROM member_claims JOIN accounts ON accounts.id=member_claims.owner WHERE name!=username
         """)}
-        return jsonify(works=[entry(row, True) for row in rows], playback=overrides, memberNames=aliases)
+        return jsonify(works=[entry(row, True) for row in rows], playback=overrides, memberNames=aliases, discussion=public_activity())
 
     @app.post("/api/playback")
     def update_seed_source():
@@ -252,6 +255,9 @@ def mount(app, db, active_user, public_user, now, fail, root):
                 conn.execute("DELETE FROM watch_history WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM episode_progress WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM episode_lines WHERE work_id=?", (key,))
+                conn.execute("DELETE FROM comment_notices WHERE comment_id IN (SELECT id FROM work_comments WHERE work_id=?)", (key,))
+                conn.execute("DELETE FROM work_comments WHERE work_id=?", (key,))
+                conn.execute("DELETE FROM work_votes WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM contributions WHERE id=?", (key,))
                 return jsonify(ok=True)
             previous = json.loads(row["draft"]) if row else {}

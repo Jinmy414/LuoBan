@@ -66,7 +66,7 @@ function loadState() {
     const savedUsers = Array.isArray(saved.users) ? saved.users.filter(user => user.accountId || !TEST_USERNAMES.has(user.username)) : [];
     const users = [...new Set([...IMPORTED_USERNAMES, ...savedUsers.map(u => u.username)])].map(username => {
       const old = savedUsers.find(u => u.username === username);
-      return { username, accountId: old?.accountId, favoriteIds: old?.favoriteIds || [], featuredCommentIds: old?.featuredCommentIds || [] };
+      return { username, accountId: old?.accountId, favoriteIds: old?.favoriteIds || [], featuredCommentIds: old?.featuredCommentIds || [], featuredComments: old?.featuredComments || [] };
     });
     return {
       ...structuredClone(defaultState),
@@ -117,6 +117,7 @@ function registeredUserCount() { return Math.max(1, state.users.filter(user => u
 
 function applyAccount(account) {
   sessionRevision++;
+  ownShowcase = null;
   activeAccount = account;
   if (!account) return;
   let user = state.users.find(item => item.accountId === account.id);
@@ -144,6 +145,17 @@ function applyAccount(account) {
     user.accountId = account.id;
   }
   saveState();
+  ensureOwnShowcase(user).then(() => {
+    if (currentUser() !== user || document.querySelector('dialog[open]')) return;
+    if (currentRoute() === 'profile') renderApp();
+    const button = document.querySelector('[data-favorite]');
+    if (button) {
+      const selected = user.favoriteIds.includes(button.dataset.favorite);
+      button.classList.toggle('button-coral', selected);
+      button.classList.toggle('button-ghost', !selected);
+      button.textContent = selected ? '♥ 已收藏' : '♡ 收藏到我的罗瓣';
+    }
+  }).catch(() => {});
 }
 function popularityThreshold() { return registeredUserCount() / 3; }
 function workRank(work) { const threshold = popularityThreshold(); if (work.votes > threshold) return 'hot'; if (work.votes < threshold) return 'cold'; return ''; }
@@ -194,7 +206,7 @@ function workCard(work, feature = false) {
 
 function renderHeader() {
   const route = currentRoute();
-  const active = route.startsWith('profile') ? 'profile' : route.startsWith('create') || route.startsWith('edit') ? 'create' : route === 'admin' ? 'admin' : 'home';
+  const active = route === 'profile' ? 'profile' : route.startsWith('create') || route.startsWith('edit') ? 'create' : route === 'admin' ? 'admin' : 'home';
   document.querySelectorAll('[data-nav]').forEach(link => {
     const selected = link.dataset.nav === active;
     link.classList.toggle('is-active', selected);
@@ -249,7 +261,7 @@ function renderHome() {
   const filtered = filteredWorks();
   const rail = (label, ids) => `<section class="pick-group"><h3>${label}</h3><div class="feature-grid">${ids.length ? ids.map(getWork).filter(Boolean).map(w => workCard(w, true)).join('') : '<p class="empty-state">还没有符合条件的作品。</p>'}</div></section>`;
   const date = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
-  return `<div class="home-heading"><h1>发现</h1><span>${date}</span></div>${renderSpotlight()}
+  return `${currentUser() ? '<aside id="noticeStack" aria-label="未读评论提醒" hidden></aside>' : ''}<div class="home-heading"><h1>发现</h1><div class="discovery-links"><time>${date}</time><a class="studio-action" href="#members">罗瓣成员 ›</a></div></div>${renderSpotlight()}
     <section class="discover-section" id="discover"><div class="section-heading"><h2>高分片单</h2><button class="text-link" type="button" data-refresh-picks>换一组 ↻</button></div><div class="pick-groups">${rail('热门高分', featuredPopularIds)}${rail('冷门高分', featuredNicheIds)}</div></section>
     <section id="catalog" class="works-section"><div class="section-heading"><h2>作品库</h2><span class="result-count" role="status">${filtered.length} 部作品</span></div>${renderFilters()}
       <div class="works-grid">${filtered.length ? filtered.slice(0, shownCount).map(w => workCard(w)).join('') : '<div class="empty-state"><strong>没有找到匹配的作品</strong><button class="button button-ghost" type="button" data-clear-filters>清除搜索与筛选</button></div>'}</div>
@@ -310,7 +322,7 @@ function renderDetail(id) {
   const canEdit = user && (user.username === work.createdBy || isAdmin(user));
   const sortedComments = [...work.comments].sort((a, b) => b.likes - a.likes || b.text.length - a.text.length);
   const ratingButtons = Array.from({ length: 21 }, (_, i) => i / 2).map(score => `<button class="rating-option ${selectedRating === score ? 'is-selected' : ''}" type="button" data-rating="${score}">${score % 1 ? score.toFixed(1) : score}</button>`).join('');
-  return `<a class="back-link" href="#home">← 返回发现</a><section class="detail-hero"><div class="detail-cover">${coverMarkup(work)}</div><div class="detail-copy"><div class="detail-heading"><h1>${escapeHTML(work.title)}</h1><div class="detail-meta"><span>${displayYear(work.year)}</span><span>${escapeHTML(work.region)}</span>${work.types.map(type => `<span>${escapeHTML(type)}</span>`).join('')}</div><div class="detail-score"><strong>${formatRating(work.rating, work.votes)}</strong><span>罗瓣评分<br />${work.votes} 人参与</span></div></div><p class="detail-summary">${escapeHTML(work.summary || '这部作品还没有一句介绍，等你来补充。')}</p><div class="detail-actions"><button class="button ${favorite ? 'button-coral' : 'button-ghost'} button-small" type="button" data-favorite="${work.id}">${favorite ? '♥ 已收藏' : '♡ 收藏到我的罗瓣'}</button>${canEdit ? `<button class="button button-ghost button-small" type="button" data-edit-work="${work.id}">编辑作品</button>` : ''}${isAdmin(user) ? `<button class="button button-danger button-small" type="button" data-delete-work="${work.id}">删除作品</button>` : ''}</div></div></section><section hidden class="episode-room" id="episodeRoom" aria-label="分集播放器"></section><div class="detail-playback" id="playbackLinks" data-work="${escapeHTML(work.id)}"></div><section class="detail-columns"><div><section class="detail-section"><h2>留下你的分数</h2><div class="rating-box"><p>从 0 到 10，每次半分都算数。${user ? '' : '登录后即可评分。'}</p><div class="rating-options">${ratingButtons}</div><div style="margin-top:13px"><button class="button button-primary button-small" type="button" data-submit-rating="${work.id}">提交评分</button></div></div></section><section class="detail-section"><h2>评论 <span class="result-count">${work.comments.length}</span></h2>${user ? `<form class="comment-form" id="commentForm" data-work-id="${work.id}"><textarea name="text" required placeholder="说说你为什么记住它……"></textarea><div style="display:flex;justify-content:flex-end"><button class="button button-primary button-small" type="submit">发布评论</button></div></form>` : loginRequired('想留下一句话吗？', '登录后可以评分、评论，也能给别人的评论点个赞。')}<div class="detail-comment-list">${sortedComments.length ? sortedComments.map(comment => `<article class="detail-comment"><div class="detail-comment-top"><button class="comment-author" type="button" data-open-profile="${escapeHTML(comment.user)}">${escapeHTML(comment.user)}</button><span class="comment-date">${escapeHTML(comment.date)}</span></div><p>${escapeHTML(comment.text)}</p><button class="like-button ${user && comment.likedBy?.includes(user.username) ? 'is-liked' : ''}" type="button" data-like-comment="${work.id}" data-comment-id="${comment.id}">♥ ${comment.likes}</button>${isAdmin(user) ? `<button class="button button-danger button-small comment-delete" type="button" data-delete-comment="${work.id}" data-comment-id="${comment.id}">删除评论</button>` : ''}</article>`).join('') : '<div class="empty-state">还没有评论，来做第一个说话的人。</div>'}</div></section></div><aside><section class="detail-section"><h2>作品信息</h2><div class="info-list"><div class="info-row"><span>类型</span><span>${work.types.map(escapeHTML).join(' / ')}</span></div><div class="info-row"><span>地区</span><span>${escapeHTML(work.region)}</span></div><div class="info-row"><span>年份</span><span>${displayYear(work.year)}</span></div><div class="info-row"><span>创建者</span><span><button class="text-link" type="button" data-open-profile="${escapeHTML(work.createdBy)}">${escapeHTML(work.createdBy)}</button></span></div>${work.sourceUrl ? `<div class="info-row"><span>资料来源</span><a class="text-link" href="${escapeHTML(work.sourceUrl)}" target="_blank" rel="noopener">Bangumi</a></div>` : ''}${work.sourceLabel ? `<div class="info-row"><span>资料来源</span><span>${escapeHTML(work.sourceLabel)}</span></div>` : ''}<div class="info-row"><span>自动标签</span><span>${autoTags(work).join(' / ')}</span></div></div></section><section class="detail-section"><h2>也许你会喜欢</h2><div class="comment-list">${state.works.filter(item => item.id !== work.id && item.types.some(type => work.types.includes(type))).slice(0, 3).map(item => `<button class="button button-ghost" style="justify-content:space-between" type="button" data-open-work="${item.id}"><span>${escapeHTML(item.title)}</span><span class="rating">${formatRating(item.rating, item.votes)}</span></button>`).join('')}</div></section></aside></section>`;
+  return `<a class="back-link" href="#home">← 返回发现</a><section class="detail-hero"><div class="detail-cover">${coverMarkup(work)}</div><div class="detail-copy"><div class="detail-heading"><h1>${escapeHTML(work.title)}</h1><div class="detail-meta"><span>${displayYear(work.year)}</span><span>${escapeHTML(work.region)}</span>${work.types.map(type => `<span>${escapeHTML(type)}</span>`).join('')}</div><div class="detail-score"><strong>${formatRating(work.rating, work.votes)}</strong><span>罗瓣评分<br />${work.votes} 人参与</span></div></div><p class="detail-summary">${escapeHTML(work.summary || '这部作品还没有一句介绍，等你来补充。')}</p><div class="detail-actions"><button class="button ${favorite ? 'button-coral' : 'button-ghost'} button-small" type="button" data-favorite="${work.id}">${favorite ? '♥ 已收藏' : '♡ 收藏到我的罗瓣'}</button>${canEdit ? `<button class="button button-ghost button-small" type="button" data-edit-work="${work.id}">编辑作品</button>` : ''}${isAdmin(user) ? `<button class="button button-danger button-small" type="button" data-delete-work="${work.id}">删除作品</button>` : ''}</div></div></section><section hidden class="episode-room" id="episodeRoom" aria-label="分集播放器"></section><div class="detail-playback" id="playbackLinks" data-work="${escapeHTML(work.id)}"></div><section class="detail-columns"><div><section class="detail-section"><h2>留下你的分数</h2><div class="rating-box"><p>从 0 到 10，每次半分都算数。${user ? '' : '登录后即可评分。'}</p><div class="rating-options">${ratingButtons}</div><div style="margin-top:13px"><button class="button button-primary button-small" type="button" data-submit-rating="${work.id}">提交评分</button></div></div></section><section class="detail-section"><h2>评论 <span class="result-count">${work.comments.length}</span></h2>${user ? `<form class="comment-form" id="commentForm" data-work-id="${work.id}"><div class="reply-context" data-reply-context hidden><span></span><button class="text-link" type="button" data-cancel-reply>取消回复</button></div><textarea name="text" required maxlength="8000" placeholder="说说你为什么记住它……"></textarea><div style="display:flex;justify-content:flex-end"><button class="button button-primary button-small" type="submit">发布评论</button></div></form>` : loginRequired('想留下一句话吗？', '登录后可以评分、评论，也能给别人的评论点个赞。')}<div class="detail-comment-list">${sortedComments.length ? sortedComments.map(c => detailCommentMarkup(work, c, user)).join('') : '<div class="empty-state">还没有评论，来做第一个说话的人。</div>'}</div></section></div><aside><section class="detail-section"><h2>作品信息</h2><div class="info-list"><div class="info-row"><span>类型</span><span>${work.types.map(escapeHTML).join(' / ')}</span></div><div class="info-row"><span>地区</span><span>${escapeHTML(work.region)}</span></div><div class="info-row"><span>年份</span><span>${displayYear(work.year)}</span></div><div class="info-row"><span>创建者</span><span>${memberLink(work.createdBy, work.authorId)}</span></div>${work.sourceUrl ? `<div class="info-row"><span>资料来源</span><a class="text-link" href="${escapeHTML(work.sourceUrl)}" target="_blank" rel="noopener">Bangumi</a></div>` : ''}${work.sourceLabel ? `<div class="info-row"><span>资料来源</span><span>${escapeHTML(work.sourceLabel)}</span></div>` : ''}<div class="info-row"><span>自动标签</span><span>${autoTags(work).join(' / ')}</span></div></div></section><section class="detail-section"><h2>也许你会喜欢</h2><div class="comment-list">${state.works.filter(item => item.id !== work.id && item.types.some(type => work.types.includes(type))).slice(0, 3).map(item => `<button class="button button-ghost" style="justify-content:space-between" type="button" data-open-work="${item.id}"><span>${escapeHTML(item.title)}</span><span class="rating">${formatRating(item.rating, item.votes)}</span></button>`).join('')}</div></section></aside></section>`;
 }
 
 function autoTags(work) {
@@ -332,7 +344,8 @@ function renderApp() {
     if (focusIndex >= 0) app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')[focusIndex]?.focus({ preventScroll: true });
   }
   else if (route === 'profile') app.innerHTML = currentUser() ? renderProfile() : loginRequired('登录后查看你的罗瓣', '收藏三部最爱作品，再留下三条最想被看见的评论。');
-  else if (route.startsWith('profile-')) app.innerHTML = renderProfile(decodeURIComponent(route.slice(8)));
+  else if (route === 'members') app.innerHTML = '<section class="studio-page"><a class="back-link" href="#home">← 返回发现</a><div class="studio-intro"><h1>罗瓣成员</h1></div><div id="memberArea"><p role="status">正在读取成员…</p></div></section>';
+  else if (route.startsWith('profile-') || route.startsWith('member-')) app.innerHTML = '<section class="studio-page" id="memberArea"><p role="status">正在读取成员主页…</p></section>';
   else if (route === 'create') app.innerHTML = renderEditor();
   else if (route.startsWith('edit-entry-')) app.innerHTML = '<div id="submissionEditor" class="empty-state" role="status">正在读取作品…</div>';
   else if (route.startsWith('edit-')) app.innerHTML = renderEditor(route.slice(5));
@@ -341,6 +354,8 @@ function renderApp() {
   else if (route.startsWith('work-')) app.innerHTML = renderDetail(route.slice(5));
   else { location.hash = '#home'; return; }
   loadStudioSections(route);
+  if (route === 'home') loadCommentNotices();
+  if (pendingDiscussion && route.startsWith('work-')) requestAnimationFrame(focusNoticeComment);
   if (route === 'home' && scrollToCatalog) { scrollToCatalog = false; requestAnimationFrame(() => document.getElementById('catalog')?.scrollIntoView()); }
 }
 
@@ -397,13 +412,17 @@ function deleteTypeByName(type) {
   saveState(); renderApp(); showToast(`类型“${type}”已删除`);
 }
 
-function deleteComment(workId, commentId) {
+async function deleteComment(workId, commentId) {
   if (!isAdmin()) { openAuth('admin'); return; }
   const work = getWork(workId);
   if (!work) return;
   const comment = work.comments.find(item => item.id === commentId);
   if (!comment) return;
   if (!window.confirm('删除这条评论？')) return;
+  if (comment.sharedComment) {
+    try { await accountRequest('discussion/' + encodeURIComponent(workId), {accountId:activeAccount.id, action:'remove', id:commentId}); }
+    catch (e) { showToast(e.message); return; }
+  }
   work.comments = work.comments.filter(item => item.id !== commentId);
   saveState(); renderApp(); showToast('评论已删除');
 }
@@ -449,8 +468,7 @@ document.addEventListener('click', async event => {
   if (target.closest('[data-refresh-picks]')) { refreshFeatured(); renderApp(); document.querySelector('[data-refresh-picks]').focus({ preventScroll: true }); return; }
   const openWork = target.closest('[data-open-work]');
   if (openWork) { navigate(`work-${openWork.dataset.openWork}`); return; }
-  const openProfile = target.closest('[data-open-profile], [data-nav-profile]');
-  if (openProfile) { navigate(`profile-${encodeURIComponent(openProfile.dataset.openProfile || openProfile.dataset.navProfile)}`); return; }
+  if (target.closest('[data-nav-profile]')) { navigate('profile'); return; }
   if (target.closest('[data-login]')) { openAuth('login'); return; }
   if (target.closest('[data-admin-entry], [data-admin-login]')) { openAuth('admin'); return; }
   if (target.closest('[data-open-create]')) { navigate('create'); return; }
@@ -472,19 +490,39 @@ document.addEventListener('click', async event => {
     if (!currentUser()) { openAuth('login'); return; }
     if (selectedRating === null) { showToast('先选择一个分数吧'); return; }
     const work = getWork(submitRating.dataset.submitRating); const user = currentUser();
-    work.userRatings = work.userRatings || {};
-    const old = work.userRatings[user.username];
-    if (old === undefined) { work.ratingSum += selectedRating; work.votes += 1; } else { work.ratingSum += selectedRating - old; }
-    work.userRatings[user.username] = selectedRating; work.rating = work.votes ? work.ratingSum / work.votes : 0;
-    saveState(); renderApp(); showToast(old === undefined ? '评分已记录，谢谢你的半分' : '评分已更新'); return;
+    const score = selectedRating;
+    submitRating.disabled = true;
+    try {
+      await accountRequest('discussion/' + encodeURIComponent(work.id), {accountId:user.accountId, action:'rate', score});
+      work.userRatings[user.username] = score;
+      await refreshPublished(false);
+      saveState();
+      if (submitRating.isConnected) renderApp();
+      showToast('评分已保存');
+    } catch (e) { showToast(e.message); }
+    finally { submitRating.disabled = false; }
+    return;
   }
   const favorite = target.closest('[data-favorite]');
   if (favorite) {
     if (!currentUser()) { openAuth('login'); return; }
-    const user = currentUser(); user.favoriteIds = user.favoriteIds || [];
-    const index = user.favoriteIds.indexOf(favorite.dataset.favorite);
-    if (index >= 0) { user.favoriteIds.splice(index, 1); showToast('已从最爱作品移除'); } else { if (user.favoriteIds.length >= 3) { showToast('三部最爱已选满，可以在「我的罗瓣」更换'); return; } user.favoriteIds.push(favorite.dataset.favorite); showToast('已放进你的三部最爱'); }
-    saveState(); renderApp(); return;
+    const user = currentUser(), workId = favorite.dataset.favorite;
+    favorite.disabled = true;
+    try {
+      await ensureOwnShowcase(user);
+      const selected = user.favoriteIds.includes(workId);
+      if (!selected && user.favoriteIds.length >= 3) { showToast('三部最爱已选满，可以在「我的罗瓣」更换'); return; }
+      const ids = selected ? user.favoriteIds.filter(id => id !== workId) : [...user.favoriteIds, workId];
+      await saveShowcase(user, {favoriteIds:ids});
+      if (currentUser() === user && favorite.isConnected) {
+        favorite.classList.toggle('button-coral', !selected);
+        favorite.classList.toggle('button-ghost', selected);
+        favorite.textContent = selected ? '♡ 收藏到我的罗瓣' : '♥ 已收藏';
+        showToast(selected ? '已从最爱作品移除' : '已放进你的三部最爱');
+      }
+    } catch (e) { showToast(e.message); }
+    finally { favorite.disabled = false; }
+    return;
   }
   const like = target.closest('[data-like-comment]');
   if (like) {
@@ -516,7 +554,26 @@ document.addEventListener('submit', async event => {
   }
   if (event.target.id === 'commentForm') {
     event.preventDefault(); if (!currentUser()) { openAuth('login'); return; }
-    const form = new FormData(event.target); const work = getWork(event.target.dataset.workId); work.comments.push({ id: `c-${Date.now()}`, user: currentUser().username, text: form.get('text').toString().trim(), likes: 0, date: new Date().toISOString().slice(0, 10) }); const user = currentUser(); user.commentCount = (user.commentCount || 0) + 1; saveState(); renderApp(); showToast('评论已经留下'); return;
+    const form = event.target, user = currentUser(), work = getWork(form.dataset.workId);
+    const body = form.elements.text.value.trim(), replyTo = form.dataset.replyTo || null;
+    if (!body) { showToast('请先写下评论。'); return; }
+    const button = form.querySelector('[type=submit]');
+    if (button.disabled) return;
+    const key = JSON.stringify([body,replyTo]);
+    if (form.dataset.lastPost !== key) {
+      form.dataset.lastPost = key;
+      form.dataset.clientId = crypto.randomUUID();
+    }
+    button.disabled = true;
+    try {
+      await accountRequest('discussion/' + encodeURIComponent(work.id), {accountId:user.accountId, action:'comment',
+        id:form.dataset.clientId, text:body, replyTo, priorScore:workCommentScore(work,user.username)});
+      await refreshPublished(false);
+      if (form.isConnected) renderApp();
+      showToast(replyTo ? '回复已发布' : '评论已经留下');
+    } catch (e) { showToast(e.message); }
+    finally { button.disabled = false; }
+    return;
   }
 
 });
