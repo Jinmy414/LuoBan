@@ -10,6 +10,7 @@ import sqlite3
 import ssl
 import time
 import unicodedata
+from contextlib import closing
 from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -104,7 +105,7 @@ def create_app(overrides=None):
     ):
         raise ValueError("SMTP_SECURITY must be starttls or ssl (plain only for local testing)")
     Path(cfg["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(cfg["DATABASE"], timeout=10) as initial:
+    with closing(sqlite3.connect(cfg["DATABASE"], timeout=10)) as initial:
         initial.executescript(SCHEMA)
 
     def db():

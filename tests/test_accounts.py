@@ -1,6 +1,7 @@
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 from server.app import create_app
@@ -51,7 +52,7 @@ class AccountsTest(unittest.TestCase):
         self.client.set_cookie("luoban_session", old_cookie)
         self.assertIsNone(self.client.get("/api/session").json["user"])
         self.assertEqual(self.post("login", identity="星星", password="new-password").status_code, 200)
-        with sqlite3.connect(self.dbfile) as conn:
+        with closing(sqlite3.connect(self.dbfile)) as conn, conn:
             self.assertNotEqual(conn.execute("SELECT password_hash FROM accounts").fetchone()[0], "new-password")
 
     def test_expired_codes_and_attempt_limits(self):
@@ -61,13 +62,13 @@ class AccountsTest(unittest.TestCase):
             self.assertEqual(self.post("verify-email", challenge=challenge, code=wrong).status_code, 400)
         self.assertEqual(self.post("verify-email", challenge=challenge, code=code).status_code, 400)
         new_challenge, new_code = self.request_code("another@example.test")
-        with sqlite3.connect(self.dbfile) as conn:
+        with closing(sqlite3.connect(self.dbfile)) as conn, conn:
             conn.execute("UPDATE challenges SET expires=0")
         self.assertEqual(self.post("verify-email", challenge=new_challenge, code=new_code).status_code, 400)
 
     def test_send_failure_and_origin(self):
         self.mail.side_effect = OSError("delivery failed")
         self.assertEqual(self.post("email-code", email="reader@example.test").status_code, 503)
-        with sqlite3.connect(self.dbfile) as conn:
+        with closing(sqlite3.connect(self.dbfile)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM challenges").fetchone()[0], 0)
         self.assertEqual(self.client.post("/api/logout", json={}, headers={"Origin": "https://other.test"}).status_code, 403)
