@@ -19,6 +19,8 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from . import community
+
 ROOT = Path(__file__).resolve().parents[1]
 IMPORTED = set("罗硬金文鹏龙飞鲨任虎马")
 SYSTEM_NAMES = {"admin", "jinmy414", "罗瓣社区", "罗瓣管理员", "__proto__", "constructor", "prototype"}
@@ -29,6 +31,10 @@ CREATE TABLE IF NOT EXISTS accounts (
  id INTEGER PRIMARY KEY, username TEXT NOT NULL, name_key TEXT UNIQUE NOT NULL,
  email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS member_claims (
+ name TEXT PRIMARY KEY, hash TEXT, expires INTEGER NOT NULL, owner INTEGER UNIQUE REFERENCES accounts(id)
+);
+CREATE TABLE IF NOT EXISTS editors (user_id INTEGER PRIMARY KEY REFERENCES accounts(id));
 CREATE TABLE IF NOT EXISTS sessions (
  digest TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES accounts(id), expires INTEGER NOT NULL
 );
@@ -87,6 +93,7 @@ def create_app(overrides=None):
         SMTP_HOST=os.getenv("SMTP_HOST", ""), SMTP_PORT=int(os.getenv("SMTP_PORT", "587")),
         SMTP_FROM=os.getenv("SMTP_FROM", ""), SMTP_USER=os.getenv("SMTP_USER", ""),
         SMTP_PASSWORD=os.getenv("SMTP_PASSWORD", ""), SMTP_SECURITY=os.getenv("SMTP_SECURITY", "starttls"),
+        SUPER_ADMIN_ID=os.getenv("SUPER_ADMIN_ID", ""),
         ADMIN_EMAIL=os.getenv("ADMIN_EMAIL", "").strip().lower(),
     )
     if overrides:
@@ -106,7 +113,7 @@ def create_app(overrides=None):
         raise ValueError("SMTP_SECURITY must be starttls or ssl (plain only for local testing)")
     Path(cfg["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(cfg["DATABASE"], timeout=10)) as initial:
-        initial.executescript(SCHEMA)
+        initial.executescript(SCHEMA + community.SCHEMA)
 
     def db():
         if "db" not in g:
@@ -122,6 +129,8 @@ def create_app(overrides=None):
     @app.before_request
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
+            if request.path in {"/api/account", "/api/submissions", "/api/reviews"}:
+                request.max_content_length = 3_000_000
             if request.headers.get("Origin") != cfg["PUBLIC_ORIGIN"] or not request.is_json:
                 return fail("请从罗瓣网站重新打开此页面。", 403)
             if not isinstance(request.get_json(silent=True), dict):
@@ -158,7 +167,15 @@ def create_app(overrides=None):
         return hmac.new(cfg["AUTH_SECRET"].encode(), (challenge + ":" + code).encode(), "sha256").hexdigest()
 
     def public_user(row):
-        return dict(id=row["id"], username=row["username"], role="admin" if row["email"] == cfg["ADMIN_EMAIL"] else "user")
+        if str(row["id"]) == str(cfg["SUPER_ADMIN_ID"]):
+            role = "superadmin"
+        elif db().execute("SELECT 1 FROM editors WHERE user_id=?", (row["id"],)).fetchone():
+            role = "admin"
+        elif not cfg["SUPER_ADMIN_ID"] and row["email"] == cfg["ADMIN_EMAIL"]:
+            role = "admin"
+        else:
+            role = "user"
+        return dict(id=row["id"], username=row["username"], role=role)
 
     def active_user():
         return db().execute("""
@@ -183,6 +200,42 @@ def create_app(overrides=None):
             return "这个用户名已保留，请换一个。"
         return None
 
+    def valid_claim(username, code):
+        if username not in IMPORTED or not code:
+            return False
+        row = db().execute("SELECT hash FROM member_claims WHERE name=? AND owner IS NULL AND expires>?",
+                           (username, now())).fetchone()
+        return bool(row and hmac.compare_digest(row["hash"], digest(code.strip().upper())))
+
+    @app.route("/api/member-invites", methods=["GET", "POST"])
+    def member_invites():
+        with db() as conn:
+            if request.method == "POST":
+                conn.execute("BEGIN IMMEDIATE")
+            user = active_user()
+            if not user or public_user(user)["role"] != "superadmin":
+                return fail("只有超级管理员可以管理认领码。", 403)
+            if request.method == "POST":
+                name = field("username")
+                if name not in IMPORTED:
+                    return fail("请选择名单中的成员。")
+                code = secrets.token_hex(8).upper()
+                changed = conn.execute("""INSERT INTO member_claims(name,hash,expires) VALUES (?,?,?)
+                    ON CONFLICT(name) DO UPDATE SET hash=excluded.hash, expires=excluded.expires
+                    WHERE owner IS NULL RETURNING name""", (name, digest(code), now()+7*86400)).fetchone()
+                if not changed:
+                    return fail("这位成员已完成绑定。", 409)
+                return jsonify(username=name, code=code)
+            rows = {r["name"]: r for r in conn.execute("SELECT name, expires, owner FROM member_claims")}
+            def status(name):
+                row = rows.get(name)
+                if not row:
+                    return "available"
+                if row["owner"] is not None:
+                    return "claimed"
+                return "issued" if row["expires"] > now() else "expired"
+            return jsonify(members=[dict(username=name, status=status(name)) for name in "罗硬金文鹏龙飞鲨任虎马"])
+
     @app.post("/api/email-code")
     def email_code():
         if not cfg["SMTP_FROM"] or not (cfg["BREVO_API_KEY"] or cfg["SMTP_HOST"]):
@@ -192,6 +245,8 @@ def create_app(overrides=None):
             return fail("请输入有效的邮箱地址。")
         if not within_limit("mail-ip:" + request.remote_addr, 25, 3600):
             return fail("发送过于频繁，请稍后再试。", 429)
+        if "claimCode" in request.json and not valid_claim(field("username"), field("claimCode")):
+            return fail("单字名或认领码无效，请向站长核对。")
         if not within_limit("mail:" + email, 1, 60):
             return fail("请在上次请求 60 秒后重试。", 429)
         challenge, code = secrets.token_urlsafe(24), f"{secrets.randbelow(1000000):06}"
@@ -235,7 +290,10 @@ def create_app(overrides=None):
             proof = conn.execute("SELECT email FROM tickets WHERE digest=? AND expires>?", (ticket_hash, now())).fetchone()
             if not proof:
                 return fail("邮箱验证已过期，请重新获取验证码。", 410)
-            error = check_name(username, proof["email"])
+            claiming = "claimCode" in request.json
+            if claiming and not valid_claim(username, field("claimCode")):
+                return fail("单字名或认领码已失效，请向站长核对。")
+            error = None if claiming else check_name(username, proof["email"])
             if error or not 8 <= len(password) <= 128:
                 return fail(error or "密码长度需为 8 至 128 个字符。")
             try:
@@ -243,6 +301,8 @@ def create_app(overrides=None):
                     (username, username.casefold(), proof["email"], generate_password_hash(password))).fetchone()
             except sqlite3.IntegrityError:
                 return fail("用户名或邮箱已经被使用。", 409)
+            if claiming:
+                conn.execute("UPDATE member_claims SET owner=?, hash=NULL, expires=0 WHERE name=?", (row["id"], username))
             conn.execute("DELETE FROM tickets WHERE digest=?", (ticket_hash,))
             return start_session(row)
 
@@ -277,21 +337,53 @@ def create_app(overrides=None):
             row = active_user()
             if not row:
                 return fail("请重新登录后再修改账号。", 401)
-            if not check_password_hash(row["password_hash"], field("currentPassword")):
+            credentials_changed = field("username").strip() != row["username"] or bool(field("password"))
+            if (credentials_changed or "avatar" not in request.json) and not check_password_hash(row["password_hash"], field("currentPassword")):
                 return fail("当前密码不正确。", 403)
             username = unicodedata.normalize("NFKC", field("username").strip())
             error = check_name(username, row["email"]) if username != row["username"] else None
             password = field("password")
             if error or (password and not 8 <= len(password) <= 128):
                 return fail(error or "新密码长度需为 8 至 128 个字符。")
+            avatar = None
+            if "avatar" in request.json:
+                try:
+                    avatar = community.image_bytes(request.json["avatar"], avatar=True)
+                except ValueError as exc:
+                    return fail(str(exc))
             try:
                 updated = conn.execute("UPDATE accounts SET username=?,name_key=?,password_hash=? WHERE id=? RETURNING *",
                     (username, username.casefold(), generate_password_hash(password) if password else row["password_hash"], row["id"])).fetchone()
             except sqlite3.IntegrityError:
                 return fail("这个用户名已经被使用。", 409)
+            if avatar is not None:
+                conn.execute("INSERT OR REPLACE INTO avatars VALUES (?,?)", (row["id"], avatar))
             if password:
                 conn.execute("DELETE FROM sessions WHERE user_id=?", (row["id"],))
             return start_session(updated)
+
+    @app.route("/api/editors", methods=["GET", "POST"])
+    def manage_editors():
+        with db() as conn:
+            if request.method == "POST":
+                conn.execute("BEGIN IMMEDIATE")
+            actor = active_user()
+            if not actor or public_user(actor)["role"] != "superadmin":
+                return fail("只有超级管理员可以设置管理员。", 403)
+            if request.method == "POST":
+                target, grant = request.json.get("id"), request.json.get("grant")
+                if type(target) is not int or type(grant) is not bool or target == actor["id"]:
+                    return fail("请选择其他已注册账号。")
+                if not conn.execute("SELECT 1 FROM accounts WHERE id=?", (target,)).fetchone():
+                    return fail("账号不存在。", 404)
+                if grant:
+                    conn.execute("INSERT OR IGNORE INTO editors VALUES (?)", (target,))
+                else:
+                    conn.execute("DELETE FROM editors WHERE user_id=?", (target,))
+            rows = conn.execute("SELECT id, username, email FROM accounts ORDER BY username")
+            return jsonify(users=[public_user(row) for row in rows])
+
+    community.mount(app, db, active_user, public_user, now, fail, ROOT)
 
     @app.get("/")
     def index():

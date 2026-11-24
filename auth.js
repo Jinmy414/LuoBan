@@ -52,6 +52,11 @@ function drawAuth() {
   const steps = ['email', 'code', 'account'];
   const titles = { login: '登录罗瓣', email: '你的邮箱是？', code: '查看你的收件箱', account: '给自己起个名字' };
   const hints = { login: '用用户名或已验证的邮箱继续。', email: '我们会发送一封含六位验证码的邮件。', code: `验证码已发送至 ${escapeHTML(flow.email)}，10 分钟内有效。`, account: '邮箱已验证。设置用户名和密码后，就可以留下你的第一条短评。' };
+  if (flow.claim) {
+    titles.email = '老成员首次登录'; titles.account = '设置登录密码';
+    hints.email = '选择原来的单字名，填写站长私下交给你的认领码和你自己的邮箱。';
+    hints.account = '邮箱已验证。设置密码后，就能用原来的单字名或邮箱登录。';
+  }
   const fields = {
     login: '<label>用户名或邮箱<input name="identity" autocomplete="username" autocapitalize="none" required></label>',
     email: '<label>邮箱地址<input name="email" type="email" placeholder="name@example.com" maxlength="254" autocomplete="email" autocapitalize="none" required></label>',
@@ -59,6 +64,12 @@ function drawAuth() {
     account: '<label>用户名<input name="username" maxlength="20" autocomplete="username" placeholder="可用中文，最多 20 字" required></label>'
   };
   const actions = { login: '登录', email: '发送验证码', code: '验证邮箱', account: '创建账号' };
+  if (flow.claim) {
+    fields.email = `<label>原来的单字名<select name="username" required><option value="">选择你的名字</option>${IMPORTED_USERNAMES.map(name => '<option>'+name+'</option>').join('')}</select></label>
+      <label>专属认领码<input name="claimCode" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" required></label>` + fields.email;
+    fields.account = `<label>用户名<input name="username" value="${escapeHTML(flow.member || '')}" readonly></label>`;
+    actions.account = '绑定邮箱并登录';
+  }
   const password = isLogin || step === 'account' ? `<label>密码<input name="password" type="password" autocomplete="${isLogin ? 'current-password' : 'new-password'}" ${isLogin ? '' : 'minlength="8" maxlength="128" placeholder="至少 8 个字符"'} required></label>` : '';
   document.getElementById('authBody').innerHTML = `
     ${isLogin ? '' : `<div class="step-track" aria-label="注册第 ${steps.indexOf(step) + 1} 步，共三步">${steps.map((s, i) => `<i class="${i <= steps.indexOf(step) ? 'filled' : ''}"></i>`).join('')}</div>`}
@@ -67,10 +78,14 @@ function drawAuth() {
       <p class="form-error" id="authError" role="alert"></p>
       <button class="button button-primary button-wide" type="submit">${actions[step]}</button>
     </form>
-    <div class="auth-links">${step === 'code' ? '<button type="button" data-resend>重新发送</button><button type="button" data-auth-step="email">更改邮箱</button>' : isLogin ? '<span>第一次来？</span><button type="button" data-auth-step="email">注册账号</button>' : '<button type="button" data-auth-step="login">已有账号？去登录</button>'}</div>`;
+    <div class="auth-links">${step === 'code' ? '<button type="button" data-resend>重新发送</button><button type="button" data-auth-step="email">更改邮箱</button>' : isLogin ? '<span>第一次来？</span><button type="button" data-auth-step="email">注册账号</button><button type="button" data-auth-step="member">老成员首次登录</button>' : '<button type="button" data-auth-step="login">已有账号？去登录</button>'}</div>`;
   const form = document.getElementById('authForm');
   if (step === 'email') form.elements.email.value = flow.email;
-  form.querySelector('input').focus({ preventScroll: true });
+  if (step === 'email' && flow.claim) {
+    form.elements.username.value = flow.member || '';
+    form.elements.claimCode.value = flow.claimCode || '';
+  }
+  form.querySelector('input,select').focus({ preventScroll: true });
   if (step === 'code') {
     const update = () => {
       const remaining = Math.max(0, Math.ceil((flow.resendAt - Date.now()) / 1000));
@@ -98,7 +113,9 @@ async function handleAuth(resend = false) {
   try {
     if (flow.step === 'email' || resend) {
       const email = (resend ? flow.email : values.email).trim();
-      const result = await accountRequest('email-code', { email });
+      if (flow.claim && !resend) { flow.member = values.username; flow.claimCode = values.claimCode.trim(); }
+      const claim = flow.claim ? {username: flow.member, claimCode: flow.claimCode} : {};
+      const result = await accountRequest('email-code', { email, ...claim });
       if (authFlow !== flow) return;
       Object.assign(flow, { step: 'code', email, challenge: result.challenge, resendAt: Date.now() + result.retryAfter * 1000 });
     } else if (flow.step === 'code') {
@@ -107,7 +124,7 @@ async function handleAuth(resend = false) {
       Object.assign(flow, { step: 'account', ticket: result.ticket });
     } else {
       const result = flow.step === 'login' ? await accountRequest('login', values)
-        : await accountRequest('register', { ...values, ticket: flow.ticket });
+        : await accountRequest('register', { ...values, ticket: flow.ticket, ...(flow.claim ? {claimCode:flow.claimCode} : {}) });
       applyAccount(result.user);
       if (authFlow === flow) authDialog.close();
       renderApp();
@@ -143,7 +160,10 @@ authDialog.addEventListener('click', event => {
   }
   if (button?.hasAttribute('data-resend')) handleAuth(true);
   if (button?.dataset.authStep) {
-    authFlow = { ...authFlow, busy: false, step: button.dataset.authStep, ticket: '', challenge: '' };
+    const next = button.dataset.authStep;
+    const claim = next === 'member' || (next === 'email' && authFlow.step === 'code' && authFlow.claim);
+    authFlow = { ...authFlow, claim, busy: false, step: next === 'member' ? 'email' : next, ticket: '', challenge: '' };
+    if (!claim) { delete authFlow.member; delete authFlow.claimCode; }
     drawAuth();
   }
 });
