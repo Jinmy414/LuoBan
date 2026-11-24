@@ -70,3 +70,15 @@ GitHub Pages 和普通静态服务器支持浏览作品。邮箱收信、验证�
 哔哩哔哩和 YouTube 线路支持逐行导入各平台的嵌入播放器地址。详情页只显示当前作品、当前集有地址的线路。点击封面开始播放，HLS 线路加载失败时会尝试同一集的其他线路。平台的地区限制由播放平台决定。
 
 浏览器直接向片源请求视频。罗瓣主机保存分集目录和账号观看记录。HLS 可续看到上次播放的时间，第三方嵌入播放器可续到上次打开的集。HLS 优先使用随项目分发的 [hls.js](https://github.com/video-dev/hls.js)，支持原生 HLS 的设备也可使用系统播放器。升级时会更新随版本发布的线路，并保留管理员手动修改和删除的记录。
+
+### Cloudflare 免费服务
+
+可在当前 PythonAnywhere 主机独立启用 Turnstile 和 Workers AI。Turnstile 小组件选择 Managed，并添加实际的网站主机名。Workers AI 使用免费计划和仅限目标账号的 Workers AI 推理令牌。
+
+在主机的项目目录运行以下命令，按提示在终端输入小组件的 Site Key、Secret Key、Cloudflare Account ID 和 API Token。两个开关也可分别使用。配置会保存在现有私有设置文件中，完成后在 Web 页重载应用。
+
+```sh
+python -m server.host_config --origin https://jinmengyao.pythonanywhere.com --turnstile --workers-ai
+```
+
+启用 Turnstile 后，登录和发送注册邮件（含重发、老成员认领）均在服务端核验操作和域名。启用 Workers AI 后，访客从站内发送动漫推荐请求将优先使用 Llama 3.3 70B。启用两项时模型入口也会核验 Turnstile。模型额度用完或模型服务不可用时，助手会尝试现有的 AI Horde Qwen。

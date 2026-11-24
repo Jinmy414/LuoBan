@@ -483,3 +483,5 @@ button:disabled { opacity: .55; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
   *,*::before,*::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+#authHumanCheck:empty { display: none; }

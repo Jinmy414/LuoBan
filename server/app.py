@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 from flask import Flask, abort, g, jsonify, request, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from . import community, episodes, profiles
+from . import cloudflare, community, episodes, profiles
 
 ROOT = Path(__file__).resolve().parents[1]
 IMPORTED = set("罗硬金文鹏龙飞鲨任虎马")
@@ -28,10 +28,10 @@ COOKIE = "luoban_session"
 SESSION_AGE = 14 * 86400
 CONTENT_POLICY = (
     "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
-    "form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
+    "form-action 'self'; script-src 'self'{turnstile}; style-src 'self'; font-src 'self'; "
     "img-src 'self' https: data: blob:; media-src 'self' https: blob:; "
     "connect-src 'self' https:; worker-src 'self' blob:; "
-    "frame-src https://player.bilibili.com https://www.youtube.com"
+    "frame-src https://player.bilibili.com https://www.youtube.com{turnstile}"
 )
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
@@ -97,6 +97,8 @@ def create_app(overrides=None):
         DATABASE=os.getenv("DATABASE", str(ROOT / "instance" / "accounts.sqlite3")),
         PUBLIC_ORIGIN=os.getenv("PUBLIC_ORIGIN", "http://localhost:8000").rstrip("/"),
         AUTH_SECRET=os.getenv("AUTH_SECRET", ""),
+        TURNSTILE_SITE_KEY=os.getenv("TURNSTILE_SITE_KEY", ""), TURNSTILE_SECRET=os.getenv("TURNSTILE_SECRET", ""),
+        CF_ACCOUNT_ID=os.getenv("CF_ACCOUNT_ID", ""), CF_AI_TOKEN=os.getenv("CF_AI_TOKEN", ""),
         BREVO_API_KEY=os.getenv("BREVO_API_KEY", ""),
         SMTP_HOST=os.getenv("SMTP_HOST", ""), SMTP_PORT=int(os.getenv("SMTP_PORT", "587")),
         SMTP_FROM=os.getenv("SMTP_FROM", ""), SMTP_USER=os.getenv("SMTP_USER", ""),
@@ -139,7 +141,9 @@ def create_app(overrides=None):
     @app.before_request
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
-            if request.path == "/api/member-showcase" or request.path.startswith("/api/discussion/"):
+            if request.path == "/api/anime-recommend":
+                request.max_content_length = 16000
+            elif request.path == "/api/member-showcase" or request.path.startswith("/api/discussion/"):
                 request.max_content_length = 320_000
             elif request.path in {"/api/account", "/api/submissions", "/api/reviews"} or request.path.startswith("/api/episodes/"):
                 request.max_content_length = 3_000_000
@@ -154,7 +158,8 @@ def create_app(overrides=None):
 
     @app.after_request
     def response_headers(response):
-        response.headers["Content-Security-Policy"] = CONTENT_POLICY
+        widget_origin = " https://challenges.cloudflare.com" if cfg["TURNSTILE_SITE_KEY"] else ""
+        response.headers["Content-Security-Policy"] = CONTENT_POLICY.format(turnstile=widget_origin)
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
@@ -266,6 +271,9 @@ def create_app(overrides=None):
             return fail("请输入有效的邮箱地址。")
         if not within_limit("mail-ip:" + request.remote_addr, 25, 3600):
             return fail("发送过于频繁，请稍后再试。", 429)
+        denied = cloudflare.verify(cfg, "email_code")
+        if denied:
+            return denied
         if "claimCode" in request.json and not valid_claim(field("username"), field("claimCode")):
             return fail("单字名或认领码无效，请向站长核对。")
         if not within_limit("mail:" + email, 1, 60):
@@ -332,6 +340,9 @@ def create_app(overrides=None):
         identity = unicodedata.normalize("NFKC", field("identity").strip()).casefold()
         if not within_limit("login-ip:" + request.remote_addr, 100, 900):
             return fail("尝试次数过多，请在 15 分钟后再试。", 429)
+        denied = cloudflare.verify(cfg, "login")
+        if denied:
+            return denied
         lookup = "SELECT * FROM accounts WHERE name_key=? OR email=?"
         row = db().execute(lookup, (identity, identity)).fetchone()
         bucket = f"login-account:{row['id']}" if row else "login-name:" + identity
@@ -437,4 +448,5 @@ def create_app(overrides=None):
             abort(404)
         return send_from_directory(ROOT, name)
 
+    cloudflare.install(app, within_limit)
     return app

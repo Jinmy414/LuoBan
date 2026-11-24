@@ -40,7 +40,7 @@ const animeChat = (() => {
     return items;
   }
 
-  function promptFor(question, items) {
+  function recommendationContext(question, items) {
     const recent = turns.slice(-3).map(turn => ({
       问: turn.question.slice(0, 150), 答: turn.reply.slice(0, 65),
       推荐: turn.picks.map(p => p.title)
@@ -61,9 +61,13 @@ const animeChat = (() => {
       if (list.length + name.length > 850) break;
       list += (list ? '｜' : '') + name;
     }
+    return {question, titles:list, history};
+  }
+
+  function hordePrompt({question, titles, history}) {
     const clean = text => text.replace(/<\|[^\n]*?\|>/g, '').replace(/<\/?think>/gi, '');
     return '<|im_start|>system\n你是罗瓣的中文动漫推荐助手。根据用户的口味从候选片名中推荐，不剧透。返回 JSON：{"recommendations":[{"title":"候选片名原文","reason":"为什么适合对方"}],"reply":"一句回应或追问"}。无法推荐时用空片名并在 reply 中回应。<|im_end|>\n'
-      + '<|im_start|>user\n最近聊过：' + clean(history) + '\n候选片名：' + clean(list)
+      + '<|im_start|>user\n最近聊过：' + clean(history) + '\n候选片名：' + clean(titles)
       + '\n观众说：' + clean(question) + '\n结合观众的要求，在上面选一到两部，在 recommendations 中逐部写中文理由。追问时参考之前的对话；换几部时避开刚推荐的作品。/no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n' + prefix;
   }
 
@@ -130,6 +134,31 @@ const animeChat = (() => {
     } finally { clearTimeout(timeout); }
   }
 
+  async function hordeGeneration(job, context) {
+    const ticket = await request('async', {method:'POST',
+      headers:{'Content-Type':'application/json', apikey:'0000000000', 'Client-Agent':'Luoban:1.0:https://jinmengyao.pythonanywhere.com'},
+      body:JSON.stringify({models, prompt:hordePrompt(context), params:{max_length:320,
+        max_context_length:4096, temperature:0.45, stop_sequence:['<|im_end|>']}})});
+    if (!/^[a-f0-9-]{36}$/i.test(ticket.id || '')) throw new Error('模型服务未接收这条消息，请重试。');
+    job.id = ticket.id;
+    if (pending !== job) { abandon(job); return; }
+    const deadline = Date.now() + 150000;
+    while (pending === job && Date.now() < deadline) {
+      const result = await request('status/' + job.id);
+      if (pending !== job) return;
+      if (result.faulted || result.is_possible === false && !result.done) throw new Error('免费模型暂时没有空闲节点，请稍后重试。');
+      if (result.done) {
+        job.id = null;
+        return result.generations?.[0];
+      }
+      status = result.processing ? '正在挑选作品、整理推荐理由…' :
+        result.queue_position > 0 ? '正在等候免费模型，队列位置 ' + result.queue_position + '…' : '已排队，正在等待免费模型…';
+      paintStatus();
+      await new Promise(resolve => setTimeout(resolve, 2400));
+    }
+    if (pending === job) throw new Error('等候时间较长，可以稍后重试。');
+  }
+
   async function send(question) {
     question = question.trim().slice(0, 360);
     if (pending || !question) return;
@@ -142,32 +171,30 @@ const animeChat = (() => {
     status = '正在连接免费模型…';
     paint();
     try {
-      const ticket = await request('async', {method:'POST',
-        headers:{'Content-Type':'application/json', apikey:'0000000000', 'Client-Agent':'Luoban:1.0:https://jinmengyao.pythonanywhere.com'},
-        body:JSON.stringify({models, prompt:promptFor(question, items), params:{max_length:320,
-          max_context_length:4096, temperature:0.45, stop_sequence:['<|im_end|>']}})});
-      if (!/^[a-f0-9-]{36}$/i.test(ticket.id || '')) throw new Error('模型服务未接收这条消息，请重试。');
-      job.id = ticket.id;
-      if (pending !== job) { abandon(job); return; }
-      const deadline = Date.now() + 150000;
-      while (pending === job && Date.now() < deadline) {
-        const result = await request('status/' + job.id);
-        if (pending !== job) return;
-        if (result.faulted || result.is_possible === false && !result.done) throw new Error('免费模型暂时没有空闲节点，请稍后重试。');
-        if (result.done) {
-          job.id = null;
-          const answer = readAnswer(result.generations?.[0], items);
-          turns.push({question, ...answer});
-          turns = turns.slice(-12);
-          status = '';
-          return;
-        }
-        status = result.processing ? '正在挑选作品、整理推荐理由…' :
-          result.queue_position > 0 ? '正在等候免费模型，队列位置 ' + result.queue_position + '…' : '已排队，正在等待免费模型…';
+      const context = recommendationContext(question, items);
+      const {llama} = await cloudflareAccess.config();
+      if (pending !== job) return;
+      let answer;
+      if (llama) {
+        status = '正在验证并连接 Llama 3.3 70B…';
         paintStatus();
-        await new Promise(resolve => setTimeout(resolve, 2400));
+        const turnstileToken = await cloudflareAccess.token('anime_chat', document.getElementById('animeHumanCheck'), () => pending === job);
+        if (pending !== job) return;
+        const result = await accountRequest('anime-recommend', {...context, turnstileToken});
+        if (pending !== job) return;
+        if (!result.fallback) {
+          try { answer = readAnswer(result, items); } catch { /* Try the other model if the first reply is unusable. */ }
+        }
+        if (!answer) { status = '正在转用备用 Qwen 模型…'; paintStatus(); }
       }
-      if (pending === job) throw new Error('等候时间较长，可以稍后重试。');
+      if (!answer) {
+        const generation = await hordeGeneration(job, context);
+        if (pending !== job) return;
+        answer = readAnswer(generation, items);
+      }
+      turns.push({question, ...answer});
+      turns = turns.slice(-12);
+      status = '';
     } catch (error) {
       if (pending !== job) return;
       abandon(job);
@@ -228,8 +255,8 @@ const animeChat = (() => {
       '<div class="anime-welcome"><h2>今天想看什么？</h2><div>' + suggestions.map(s => '<button type="button" data-chat-suggest>' + s + '</button>').join('') + '</div></div>' +
       '<div class="anime-log" role="log" aria-label="推荐对话" aria-live="polite" aria-relevant="additions"></div>' +
       '<div class="anime-feedback"><span id="animeStatus" role="status"></span><button type="button" data-chat-retry hidden>重试</button><button type="button" data-chat-cancel hidden>取消</button></div>' +
-      '<form class="anime-form"><label for="animeQuestion">告诉罗瓣你的动漫偏好</label><textarea id="animeQuestion" maxlength="360" rows="2" placeholder="说说你喜欢的作品、题材或心情…" aria-describedby="animePrivacy"></textarea><button type="submit">发送</button></form>' +
-      '<p class="anime-privacy" id="animePrivacy">对话和公开片名会发送给 AI Horde 社区模型。请勿输入个人信息。</p></section>';
+      '<div id="animeHumanCheck"></div><form class="anime-form"><label for="animeQuestion">告诉罗瓣你的动漫偏好</label><textarea id="animeQuestion" maxlength="360" rows="2" placeholder="说说你喜欢的作品、题材或心情…" aria-describedby="animePrivacy"></textarea><button type="submit">发送</button></form>' +
+      '<p class="anime-privacy" id="animePrivacy">推荐模型会收到本次对话和公开片名。服务由 Cloudflare 或 AI Horde 提供，请勿输入个人信息。</p></section>';
     const root = app.querySelector('#animeChat');
     const input = root.querySelector('textarea');
     const submit = root.querySelector('[type=submit]');

@@ -77,6 +77,7 @@ function drawAuth() {
     ${isLogin ? '' : `<div class="step-track" aria-label="注册第 ${steps.indexOf(step) + 1} 步，共三步">${steps.map((s, i) => `<i class="${i <= steps.indexOf(step) ? 'filled' : ''}"></i>`).join('')}</div>`}
     <h2 id="authTitle">${titles[step]}</h2><p class="auth-description">${hints[step]}</p>
     <form method="post" id="authForm" class="stack-form">${fields[step]}${password}
+      <div id="authHumanCheck"></div>
       <p class="form-error" id="authError" role="alert"></p>
       <button class="button button-primary button-wide" type="submit">${actions[step]}</button>
     </form>
@@ -113,11 +114,19 @@ async function handleAuth(resend = false) {
   const error = document.getElementById('authError');
   error.textContent = '';
   try {
+    const action = flow.step === 'login' ? 'login' : (flow.step === 'email' || resend) ? 'email_code' : '';
+    let turnstileToken;
+    if (action) {
+      submit.textContent = '正在验证…';
+      turnstileToken = await cloudflareAccess.token(action, form.querySelector('#authHumanCheck'), () => authFlow === flow && authDialog.open);
+      if (authFlow !== flow || !authDialog.open) return;
+      submit.textContent = '正在处理…';
+    }
     if (flow.step === 'email' || resend) {
       const email = (resend ? flow.email : values.email).trim();
       if (flow.claim && !resend) { flow.member = values.username; flow.claimCode = values.claimCode.trim(); }
       const claim = flow.claim ? {username: flow.member, claimCode: flow.claimCode} : {};
-      const result = await accountRequest('email-code', { email, ...claim });
+      const result = await accountRequest('email-code', { email, ...claim, turnstileToken });
       if (authFlow !== flow) return;
       Object.assign(flow, { step: 'code', email, challenge: result.challenge, resendAt: Date.now() + result.retryAfter * 1000 });
     } else if (flow.step === 'code') {
@@ -125,7 +134,7 @@ async function handleAuth(resend = false) {
       if (authFlow !== flow) return;
       Object.assign(flow, { step: 'account', ticket: result.ticket });
     } else {
-      const result = flow.step === 'login' ? await accountRequest('login', values)
+      const result = flow.step === 'login' ? await accountRequest('login', {...values, turnstileToken})
         : await accountRequest('register', { ...values, ticket: flow.ticket, ...(flow.claim ? {claimCode:flow.claimCode} : {}) });
       applyAccount(result.user);
       if (authFlow === flow) authDialog.close();
