@@ -257,7 +257,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       <video hidden controls playsinline preload="none" aria-label="${escapeHTML(work.title)}"></video>
     </div>
     <div class="episode-player-controls"><label>播放线路<select name="line"></select></label>
-    <label>选集<select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
+    <label><span data-pick-label>选集</span><select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
     <div class="episode-feedback" role="status"></div>`;
   const video = room.querySelector('video'),
     source = room.querySelector('[name=line]'),
@@ -269,7 +269,14 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   const labels = [...new Set(catalogue.lines.flatMap(l => l.episodes.map(e => e.label)))];
   if (labels.every(label => /^第\d+集$/.test(label))) labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
   picker.innerHTML = labels.map((label, i) => `<option value="${i}">${escapeHTML(label)}</option>`).join('');
-  room.querySelector('[data-count]').textContent = '共 ' + labels.length + ' 集';
+  const issues = labels.map(label => /^第(\d+)期(?:[上下])?$/.exec(label));
+  if (issues.every(Boolean)) {
+    room.querySelector('[data-count]').textContent = '共 ' + new Set(issues.map(m => m[1])).size + ' 期';
+    room.querySelector('[data-pick-label]').textContent = '选期';
+    next.textContent = labels.some(label => /[上下]$/.test(label)) ? '下一段' : '下一期';
+  } else {
+    room.querySelector('[data-count]').textContent = '共 ' + labels.length + ' 集';
+  }
   const failed = new Set();
   let frame, loadTimer;
   let line,

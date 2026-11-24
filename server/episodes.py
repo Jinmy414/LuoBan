@@ -105,7 +105,9 @@ def install_catalogues(conn, path):
             if key in keys or key[1] not in SOURCES:
                 raise ValueError(f"Invalid bundled source: {key}")
             keys.add(key)
-            entries = [dict(label=f"第{i}集", url=url) for i, url in enumerate(line["urls"], 1)]
+            entries = line["episodes"] if "episodes" in line else [
+                dict(label=f"第{i}集", url=url) for i, url in enumerate(line["urls"], 1)
+            ]
             title, body = validated_catalogue(dict(title=line["title"], episodes=entries), key[1])
             revision = "seed:" + hashlib.sha256((title + "\n" + body).encode()).hexdigest()[:24]
             old = existing.get(key)

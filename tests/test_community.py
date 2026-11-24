@@ -209,6 +209,18 @@ class CommunityTest(unittest.TestCase):
         restarted = create_app(self.app.config).test_client()
         self.assertNotIn(line["source"], [r["source"] for r in restarted.get("/api/" + path).json["lines"]])
 
+    def test_variety_issue_labels_and_series_seasons(self):
+        path = "/api/episodes/variety-houhui-youqi"
+        lines = self.guest.get(path).get_json()["lines"]
+        self.assertTrue(lines)
+        for line in lines:
+            labels = [entry["label"] for entry in line["episodes"]]
+            self.assertEqual(labels[:4], ["第1期", "第2期", "第3期上", "第3期下"])
+        for series, count in (("yellowstone-s5", 14), ("clarksons-farm-s5", 8)):
+            lines = self.guest.get("/api/episodes/" + series).get_json()["lines"]
+            self.assertTrue(lines)
+            self.assertEqual([e["label"] for e in lines[0]["episodes"]], [f"第{i}集" for i in range(1, count + 1)])
+
     def test_platform_embeds_are_bound_to_provider_and_episode(self):
         from server.episodes import validated_catalogue
         url = "https://www.youtube.com/embed/MAIpv5WnqoY"

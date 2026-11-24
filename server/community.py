@@ -107,7 +107,10 @@ def work_fields(data, admin, previous):
 
 def mount(app, db, active_user, public_user, now, fail, root, imported):
     catalogue = json.loads((root / "assets" / "playback.json").read_text())
-    seed_works = json.loads((root / "assets" / "animation-works.js").read_text().partition(" = ")[2].strip().rstrip(";"))
+    seed_works = []
+    for filename in ("animation-works.js", "series-works.js"):
+        content = (root / "assets" / filename).read_text()
+        seed_works.extend(json.loads(content.partition(" = ")[2].strip().rstrip(";")))
     seed_ids = {work["id"] for work in seed_works}
 
     def admin(user):
