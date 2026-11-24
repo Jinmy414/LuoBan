@@ -66,13 +66,10 @@ function loadState() {
       ...savedWorks.filter(work => !seedWorks.some(seed => seed.id === work.id)).map(normalizeWork)
     ];
     const savedUsers = Array.isArray(saved.users) ? saved.users.filter(user => user.accountId || !TEST_USERNAMES.has(user.username)) : [];
-    const users = savedUsers.map(old => ({
-      username: old.username, accountId: old.accountId, favoriteIds: old.favoriteIds || [],
-      featuredCommentIds: old.featuredCommentIds || [], featuredComments: old.featuredComments || []
-    }));
-    for (const username of IMPORTED_USERNAMES) {
-      if (!users.some(user => user.username === username)) users.push({ username, favoriteIds: [], featuredCommentIds: [] });
-    }
+    const users = [...new Set([...IMPORTED_USERNAMES, ...savedUsers.map(u => u.username)])].map(username => {
+      const old = savedUsers.find(u => u.username === username);
+      return { username, accountId: old?.accountId, favoriteIds: old?.favoriteIds || [], featuredCommentIds: old?.featuredCommentIds || [], featuredComments: old?.featuredComments || [] };
+    });
     const types = Array.isArray(saved.types) && saved.types.length ? saved.types.filter(type => type && !REMOVED_TYPES.has(type)) : DEFAULT_TYPE_OPTIONS;
     return {
       ...structuredClone(defaultState),
@@ -89,6 +86,7 @@ function loadState() {
 
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 function getWork(id) { return state.works.find(work => work.id === id); }
+function getUser(username) { return state.users.find(user => user.username === username); }
 function typeOptions() { return state?.types?.length ? state.types : DEFAULT_TYPE_OPTIONS; }
 function isBgmWork(work) { return String(work?.createdBy || '').toLowerCase() === 'bgm' || String(work?.createdBy || '').toLowerCase() === 'bangumi' || String(work?.id || '').startsWith('bgm-') || String(work?.sourceUrl || '').includes('bgm.tv'); }
 function isTestWork(work) { return TEST_WORK_IDS.has(work?.id); }
@@ -116,7 +114,7 @@ function mergeSeedWork(seed, saved) {
   });
 }
 function currentRoute() { return location.hash.slice(1) || 'home'; }
-function currentUser() { return activeAccount ? state.users.find(user => user.accountId === activeAccount.id) : null; }
+function currentUser() { return activeAccount ? getUser(activeAccount.username) : null; }
 function isAdmin(user = currentUser()) { return Boolean(user && ['admin','superadmin'].includes(activeAccount?.role) && user.accountId === activeAccount.id); }
 function registeredUserCount() { return Math.max(1, state.users.filter(user => user.username !== 'admin').length); }
 
@@ -129,22 +127,20 @@ function applyAccount(account) {
   if (user && user.username !== account.username) {
     const previous = user.username;
     for (const work of state.works) {
-      if (work.createdBy === previous && (!work.authorId || work.authorId === account.id)) work.createdBy = account.username;
+      if (work.createdBy === previous) work.createdBy = account.username;
       if (Object.hasOwn(work.userRatings || {}, previous)) {
         work.userRatings[account.username] = work.userRatings[previous];
         delete work.userRatings[previous];
       }
       for (const comment of work.comments) {
-        if (comment.user === previous && (!comment.authorId || comment.authorId === account.id)) comment.user = account.username;
+        if (comment.user === previous) comment.user = account.username;
         if (comment.likedBy) comment.likedBy = [...new Set(comment.likedBy.map(name => name === previous ? account.username : name))];
       }
     }
     user.username = account.username;
   }
   if (!user) {
-    // Only claimed, reserved names can inherit selections from the original offline roster.
-    user = IMPORTED_USERNAMES.includes(account.username)
-      && state.users.find(item => !item.accountId && item.username === account.username);
+    user = getUser(account.username);
     if (!user) {
       user = { username: account.username, favoriteIds: [], featuredCommentIds: [] };
       state.users.push(user);
@@ -171,7 +167,7 @@ function popularityThresholdLabel() { const threshold = popularityThreshold(); r
 function escapeHTML(value = '') { return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char])); }
 function safeImage(value = '') { return /^\/api\/works\/entry-[a-f0-9]{32}\/cover\?v=\d+$/.test(value) || /^https?:\/\//i.test(value) || /^(?:\.\/)?assets\/covers\//i.test(value) || /^data:image\/(?:png|jpe?g|gif|webp);base64,/i.test(value) ? value : ''; }
 function formatRating(value, votes = null) { return votes === 0 || value === null || value === undefined || value === '' ? '—' : Number(value).toFixed(1); }
-function displayYear(year) { return year ? escapeHTML(year) : '年份待补'; }
+function displayYear(year) { return year ? String(year) : '年份待补'; }
 function displayRating(work) { if (!work.votes) return null; return state.sort === 'score' ? work.rating : Math.min(10, work.rating + (workRank(work) === 'hot' ? 1 : 0)); }
 function yearBucket(year) {
   if (year <= 1989) return '80年代及以前';
@@ -188,14 +184,10 @@ function refreshFeatured() {
   featuredNicheIds = shuffle(niche).slice(0, 3).map(work => work.id);
 }
 
-function posterKey(value) {
-  return Object.keys(POSTER_OPTIONS).find(key => key === value || POSTER_OPTIONS[key] === value) || 'mint';
-}
-
 function coverMarkup(work, extraClass = '') {
   const image = safeImage(work.coverImage);
-  return `<div class="work-cover ${extraClass} ${image ? 'has-image' : ''}" data-poster="${posterKey(work.poster)}">
-    ${image ? `<img class="cover-photo" src="${escapeHTML(image)}" alt="">` : ''}
+  const style = image ? `style="background-image:url('${escapeHTML(image)}')"` : `style="--cover:${work.poster || POSTER_OPTIONS.mint}"`;
+  return `<div class="work-cover ${extraClass} ${image ? 'has-image' : ''}" ${style}>
     <span class="cover-symbol">${escapeHTML(work.title.slice(0, 1))}</span>
     <span class="cover-title">${escapeHTML(work.title)}</span>
   </div>`;
@@ -333,7 +325,7 @@ function renderDetail(id) {
   const canEdit = user && (user.username === work.createdBy || isAdmin(user));
   const sortedComments = [...work.comments].sort((a, b) => b.likes - a.likes || b.text.length - a.text.length);
   const ratingButtons = Array.from({ length: 21 }, (_, i) => i / 2).map(score => `<button class="rating-option ${selectedRating === score ? 'is-selected' : ''}" type="button" data-rating="${score}">${score % 1 ? score.toFixed(1) : score}</button>`).join('');
-  return `<a class="back-link" href="#home">← 返回发现</a><section class="detail-hero"><div class="detail-cover">${coverMarkup(work)}</div><div class="detail-copy"><div class="detail-heading"><h1>${escapeHTML(work.title)}</h1><div class="detail-meta"><span>${displayYear(work.year)}</span><span>${escapeHTML(work.region)}</span>${work.types.map(type => `<span>${escapeHTML(type)}</span>`).join('')}</div><div class="detail-score"><strong>${formatRating(work.rating, work.votes)}</strong><span>罗瓣评分<br />${Number(work.votes) || 0} 人参与</span></div></div><p class="detail-summary">${escapeHTML(work.summary || '这部作品还没有一句介绍，等你来补充。')}</p><div class="detail-actions"><button class="button ${favorite ? 'button-coral' : 'button-ghost'} button-small" type="button" data-favorite="${escapeHTML(work.id)}">${favorite ? '♥ 已收藏' : '♡ 收藏到我的罗瓣'}</button>${canEdit ? `<button class="button button-ghost button-small" type="button" data-edit-work="${escapeHTML(work.id)}">编辑作品</button>` : ''}${isAdmin(user) ? `<button class="button button-danger button-small" type="button" data-delete-work="${escapeHTML(work.id)}">删除作品</button>` : ''}</div></div></section><section hidden class="episode-room" id="episodeRoom" aria-label="分集播放器"></section><div class="detail-playback" id="playbackLinks" data-work="${escapeHTML(work.id)}"></div><section class="detail-columns"><div><section class="detail-section"><h2>留下你的分数</h2><div class="rating-box"><p>从 0 到 10，每次半分都算数。${user ? '' : '登录后即可评分。'}</p><div class="rating-options">${ratingButtons}</div><div class="rating-submit"><button class="button button-primary button-small" type="button" data-submit-rating="${escapeHTML(work.id)}">提交评分</button></div></div></section><section class="detail-section"><h2>评论 <span class="result-count">${work.comments.length}</span></h2>${user ? `<form class="comment-form" id="commentForm" data-work-id="${escapeHTML(work.id)}"><div class="reply-context" data-reply-context hidden><span></span><button class="text-link" type="button" data-cancel-reply>取消回复</button></div><textarea name="text" required maxlength="8000" placeholder="说说你为什么记住它……"></textarea><div class="comment-submit"><button class="button button-primary button-small" type="submit">发布评论</button></div></form>` : loginRequired('想留下一句话吗？', '登录后可以评分、评论，也能给别人的评论点个赞。')}<div class="detail-comment-list">${sortedComments.length ? sortedComments.map(c => detailCommentMarkup(work, c, user)).join('') : '<div class="empty-state">还没有评论，来做第一个说话的人。</div>'}</div></section></div><aside><section class="detail-section"><h2>作品信息</h2><div class="info-list"><div class="info-row"><span>类型</span><span>${work.types.map(escapeHTML).join(' / ')}</span></div><div class="info-row"><span>地区</span><span>${escapeHTML(work.region)}</span></div><div class="info-row"><span>年份</span><span>${displayYear(work.year)}</span></div><div class="info-row"><span>创建者</span><span>${memberLink(work.createdBy, work.authorId)}</span></div>${work.sourceUrl ? `<div class="info-row"><span>资料来源</span><a class="text-link" href="${escapeHTML(work.sourceUrl)}" target="_blank" rel="noopener">${escapeHTML(work.sourceName || 'Bangumi')}</a></div>` : ''}${work.sourceLabel ? `<div class="info-row"><span>资料来源</span><span>${escapeHTML(work.sourceLabel)}</span></div>` : ''}<div class="info-row"><span>自动标签</span><span>${autoTags(work).join(' / ')}</span></div></div></section><section class="detail-section"><h2>也许你会喜欢</h2><div class="comment-list">${state.works.filter(item => item.id !== work.id && item.types.some(type => work.types.includes(type))).slice(0, 3).map(item => `<button class="button button-ghost related-work" type="button" data-open-work="${escapeHTML(item.id)}"><span>${escapeHTML(item.title)}</span><span class="rating">${formatRating(item.rating, item.votes)}</span></button>`).join('')}</div></section></aside></section>`;
+  return `<a class="back-link" href="#home">← 返回发现</a><section class="detail-hero"><div class="detail-cover">${coverMarkup(work)}</div><div class="detail-copy"><div class="detail-heading"><h1>${escapeHTML(work.title)}</h1><div class="detail-meta"><span>${displayYear(work.year)}</span><span>${escapeHTML(work.region)}</span>${work.types.map(type => `<span>${escapeHTML(type)}</span>`).join('')}</div><div class="detail-score"><strong>${formatRating(work.rating, work.votes)}</strong><span>罗瓣评分<br />${work.votes} 人参与</span></div></div><p class="detail-summary">${escapeHTML(work.summary || '这部作品还没有一句介绍，等你来补充。')}</p><div class="detail-actions"><button class="button ${favorite ? 'button-coral' : 'button-ghost'} button-small" type="button" data-favorite="${work.id}">${favorite ? '♥ 已收藏' : '♡ 收藏到我的罗瓣'}</button>${canEdit ? `<button class="button button-ghost button-small" type="button" data-edit-work="${work.id}">编辑作品</button>` : ''}${isAdmin(user) ? `<button class="button button-danger button-small" type="button" data-delete-work="${work.id}">删除作品</button>` : ''}</div></div></section><section hidden class="episode-room" id="episodeRoom" aria-label="分集播放器"></section><div class="detail-playback" id="playbackLinks" data-work="${escapeHTML(work.id)}"></div><section class="detail-columns"><div><section class="detail-section"><h2>留下你的分数</h2><div class="rating-box"><p>从 0 到 10，每次半分都算数。${user ? '' : '登录后即可评分。'}</p><div class="rating-options">${ratingButtons}</div><div style="margin-top:13px"><button class="button button-primary button-small" type="button" data-submit-rating="${work.id}">提交评分</button></div></div></section><section class="detail-section"><h2>评论 <span class="result-count">${work.comments.length}</span></h2>${user ? `<form class="comment-form" id="commentForm" data-work-id="${work.id}"><div class="reply-context" data-reply-context hidden><span></span><button class="text-link" type="button" data-cancel-reply>取消回复</button></div><textarea name="text" required maxlength="8000" placeholder="说说你为什么记住它……"></textarea><div style="display:flex;justify-content:flex-end"><button class="button button-primary button-small" type="submit">发布评论</button></div></form>` : loginRequired('想留下一句话吗？', '登录后可以评分、评论，也能给别人的评论点个赞。')}<div class="detail-comment-list">${sortedComments.length ? sortedComments.map(c => detailCommentMarkup(work, c, user)).join('') : '<div class="empty-state">还没有评论，来做第一个说话的人。</div>'}</div></section></div><aside><section class="detail-section"><h2>作品信息</h2><div class="info-list"><div class="info-row"><span>类型</span><span>${work.types.map(escapeHTML).join(' / ')}</span></div><div class="info-row"><span>地区</span><span>${escapeHTML(work.region)}</span></div><div class="info-row"><span>年份</span><span>${displayYear(work.year)}</span></div><div class="info-row"><span>创建者</span><span>${memberLink(work.createdBy, work.authorId)}</span></div>${work.sourceUrl ? `<div class="info-row"><span>资料来源</span><a class="text-link" href="${escapeHTML(work.sourceUrl)}" target="_blank" rel="noopener">${escapeHTML(work.sourceName || 'Bangumi')}</a></div>` : ''}${work.sourceLabel ? `<div class="info-row"><span>资料来源</span><span>${escapeHTML(work.sourceLabel)}</span></div>` : ''}<div class="info-row"><span>自动标签</span><span>${autoTags(work).join(' / ')}</span></div></div></section><section class="detail-section"><h2>也许你会喜欢</h2><div class="comment-list">${state.works.filter(item => item.id !== work.id && item.types.some(type => work.types.includes(type))).slice(0, 3).map(item => `<button class="button button-ghost" style="justify-content:space-between" type="button" data-open-work="${item.id}"><span>${escapeHTML(item.title)}</span><span class="rating">${formatRating(item.rating, item.votes)}</span></button>`).join('')}</div></section></aside></section>`;
 }
 
 function autoTags(work) {
