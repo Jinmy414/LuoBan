@@ -264,7 +264,7 @@ function renderHome() {
   const filtered = filteredWorks();
   const rail = (label, ids) => `<section class="pick-group"><h3>${label}</h3><div class="feature-grid">${ids.length ? ids.map(getWork).filter(Boolean).map(w => workCard(w, true)).join('') : '<p class="empty-state">还没有符合条件的作品。</p>'}</div></section>`;
   const date = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date());
-  return `${currentUser() ? '<aside id="noticeStack" aria-label="未读评论提醒" hidden></aside>' : ''}<div class="home-heading"><h1>发现</h1><div class="discovery-links"><time>${date}</time><a class="studio-action" href="#members">罗瓣成员 ›</a></div></div>${renderSpotlight()}
+  return `${currentUser() ? '<aside id="noticeStack" aria-label="未读评论提醒" hidden></aside>' : ''}<div class="home-heading"><h1>发现</h1><div class="discovery-links"><time>${date}</time><a class="studio-action anime-entry" href="#anime-chat">动漫推荐</a><a class="studio-action" href="#members">罗瓣成员 ›</a></div></div>${renderSpotlight()}
     <section class="discover-section" id="discover"><div class="section-heading"><h2>高分片单</h2><button class="text-link" type="button" data-refresh-picks>换一组 ↻</button></div><div class="pick-groups">${rail('热门高分', featuredPopularIds)}${rail('冷门高分', featuredNicheIds)}</div></section>
     <section id="catalog" class="works-section"><div class="section-heading"><h2>作品库</h2><span class="result-count" role="status">${filtered.length} 部作品</span></div>${renderFilters()}
       <div class="works-grid">${filtered.length ? filtered.slice(0, shownCount).map(w => workCard(w)).join('') : '<div class="empty-state"><strong>没有找到匹配的作品</strong><button class="button button-ghost" type="button" data-clear-filters>清除搜索与筛选</button></div>'}</div>
@@ -347,6 +347,7 @@ function renderApp() {
     if (focusIndex >= 0) app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')[focusIndex]?.focus({ preventScroll: true });
   }
   else if (route === 'profile') app.innerHTML = currentUser() ? renderProfile() : loginRequired('登录后查看你的罗瓣', '收藏三部最爱作品，再留下三条最想被看见的评论。');
+  else if (route === 'anime-chat') animeChat.mount(app);
   else if (route === 'members') app.innerHTML = '<section class="studio-page"><a class="back-link" href="#home">← 返回发现</a><div class="studio-intro"><h1>罗瓣成员</h1></div><div id="memberArea"><p role="status">正在读取成员…</p></div></section>';
   else if (route.startsWith('profile-') || route.startsWith('member-')) app.innerHTML = '<section class="studio-page" id="memberArea"><p role="status">正在读取成员主页…</p></section>';
   else if (route === 'create') app.innerHTML = renderEditor();
