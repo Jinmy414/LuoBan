@@ -138,7 +138,6 @@ def create_app(overrides=None):
         if "db" in g:
             g.db.close()
 
-    @app.before_request
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
             if request.path == "/api/anime-recommend":
@@ -166,7 +165,7 @@ def create_app(overrides=None):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.path.startswith("/api/"):
+        if request.path.startswith("/api/") or request.path in {"/", "/index.html"}:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -271,9 +270,6 @@ def create_app(overrides=None):
             return fail("请输入有效的邮箱地址。")
         if not within_limit("mail-ip:" + request.remote_addr, 25, 3600):
             return fail("发送过于频繁，请稍后再试。", 429)
-        denied = cloudflare.verify(cfg, "email_code")
-        if denied:
-            return denied
         if "claimCode" in request.json and not valid_claim(field("username"), field("claimCode")):
             return fail("单字名或认领码无效，请向站长核对。")
         if not within_limit("mail:" + email, 1, 60):
@@ -340,9 +336,6 @@ def create_app(overrides=None):
         identity = unicodedata.normalize("NFKC", field("identity").strip()).casefold()
         if not within_limit("login-ip:" + request.remote_addr, 100, 900):
             return fail("尝试次数过多，请在 15 分钟后再试。", 429)
-        denied = cloudflare.verify(cfg, "login")
-        if denied:
-            return denied
         lookup = "SELECT * FROM accounts WHERE name_key=? OR email=?"
         row = db().execute(lookup, (identity, identity)).fetchone()
         bucket = f"login-account:{row['id']}" if row else "login-name:" + identity
@@ -449,4 +442,5 @@ def create_app(overrides=None):
         return send_from_directory(ROOT, name)
 
     cloudflare.install(app, within_limit)
+    app.before_request(validate_request)
     return app

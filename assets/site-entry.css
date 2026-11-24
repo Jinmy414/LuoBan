@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 20px; background: #f7f8fa; color: #162621; font: 16px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+main { width: min(100%, 400px); padding: 32px clamp(14px, 4vw, 30px); border: 1px solid #e1e7e3; border-radius: 24px; background: white; text-align: center; box-shadow: 0 10px 40px #18372a08; }
+img { border-radius: 18px; }
+h1 { margin: 12px 0 5px; font-size: 28px; letter-spacing: -.04em; }
+p { margin: 0; font-size: 14px; color: #52615b; }
+#entryWidget:not(:empty) { margin-top: 20px; }
+button { margin-top: 16px; padding: 10px 18px; min-height: 44px; border: 0; border-radius: 13px; background: #104b3b; color: white; font: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid #437c71; outline-offset: 3px; }
+@media (max-width: 350px) { body { padding: 8px; } main { padding-inline: 10px; } }

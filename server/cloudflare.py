@@ -1,11 +1,14 @@
 """Cloudflare Turnstile and the fixed Workers AI anime recommendation endpoint."""
 import json
 import re
+import secrets
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from flask import jsonify, request
+from flask import jsonify, render_template, request
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 
+VISIT_AGE = 12 * 60 * 60
 MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 INSTRUCTIONS = (
     "你是罗瓣动漫推荐助手。根据观众偏好和最近对话，只从候选片名中挑一到两部，"
@@ -22,9 +25,7 @@ def post_json(url, payload, headers=None, timeout=8):
         return json.load(response)
 
 
-def verify(cfg, action):
-    if not cfg["TURNSTILE_SECRET"]:
-        return None
+def verify_entry(cfg):
     token = request.json.get("turnstileToken")
     if not isinstance(token, str) or not 1 <= len(token) <= 2048:
         return jsonify(error="请先完成人机验证。"), 403
@@ -35,7 +36,7 @@ def verify(cfg, action):
         return jsonify(error="暂时无法核验，请稍后重试。"), 503
     if not (isinstance(verdict, dict) and verdict.get("success") is True and
             verdict.get("hostname") == urlsplit(cfg["PUBLIC_ORIGIN"]).hostname and
-            verdict.get("action") == action):
+            verdict.get("action") == "site_entry"):
         return jsonify(error="人机验证未通过或已过期，请重试。"), 403
     return None
 
@@ -47,9 +48,45 @@ def install(app, within_limit):
     if cfg["CF_AI_TOKEN"] and not re.fullmatch(r"[a-f0-9]{32}", cfg["CF_ACCOUNT_ID"]):
         raise ValueError("A valid Cloudflare account ID is required for Workers AI")
 
+    secure = urlsplit(cfg["PUBLIC_ORIGIN"]).scheme == "https"
+    cookie = "__Host-luoban_visit" if secure else "luoban_visit"
+    visits = URLSafeTimedSerializer(cfg["AUTH_SECRET"], salt="luoban-site-entry-v1")
+
+    @app.before_request
+    def require_visit():
+        if not cfg["TURNSTILE_SECRET"] or request.endpoint == "complete_site_entry":
+            return None
+        page = request.path in {"/", "/index.html"}
+        if not page and not request.path.startswith("/api/"):
+            return None
+        proof = request.cookies.get(cookie)
+        if proof:
+            try:
+                visits.loads(proof, max_age=VISIT_AGE)
+                return None
+            except BadSignature:
+                pass
+        if page:
+            return render_template("site_entry.html", site_key=cfg["TURNSTILE_SITE_KEY"])
+        return jsonify(code="SITE_ENTRY_REQUIRED", error="请先完成网站入口验证。"), 403
+
+    @app.post("/api/site-entry")
+    def complete_site_entry():
+        if not cfg["TURNSTILE_SECRET"]:
+            return jsonify(verified=True)
+        if not within_limit("entry:" + request.remote_addr, 60, 600):
+            return jsonify(error="验证请求过于频繁，请稍后重试。"), 429
+        denied = verify_entry(cfg)
+        if denied:
+            return denied
+        response = jsonify(verified=True)
+        response.set_cookie(cookie, visits.dumps(secrets.token_urlsafe(16)), secure=secure,
+                            httponly=True, samesite="Lax", path="/")
+        return response
+
     @app.get("/api/cloudflare-config")
     def public_config():
-        return jsonify(siteKey=cfg["TURNSTILE_SITE_KEY"], llama=bool(cfg["CF_AI_TOKEN"]))
+        return jsonify(llama=bool(cfg["CF_AI_TOKEN"]))
 
     @app.post("/api/anime-recommend")
     def recommend():
@@ -61,9 +98,6 @@ def install(app, within_limit):
             return jsonify(error="请检查消息长度后重试。"), 400
         if not within_limit("ai-ip:" + request.remote_addr, 12, 600):
             return jsonify(error="推荐请求过于频繁，请稍后再试。"), 429
-        denied = verify(cfg, "anime_chat")
-        if denied:
-            return denied
         query = json.dumps({"观众说": data["question"], "候选片名": data["titles"], "最近对话": data["history"]},
                            ensure_ascii=False)
         try:

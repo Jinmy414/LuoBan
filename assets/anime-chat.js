@@ -176,11 +176,9 @@ const animeChat = (() => {
       if (pending !== job) return;
       let answer;
       if (llama) {
-        status = '正在验证并连接 Llama 3.3 70B…';
+        status = '正在用 Llama 3.3 70B 挑选作品…';
         paintStatus();
-        const turnstileToken = await cloudflareAccess.token('anime_chat', document.getElementById('animeHumanCheck'), () => pending === job);
-        if (pending !== job) return;
-        const result = await accountRequest('anime-recommend', {...context, turnstileToken});
+        const result = await accountRequest('anime-recommend', context);
         if (pending !== job) return;
         if (!result.fallback) {
           try { answer = readAnswer(result, items); } catch { /* Try the other model if the first reply is unusable. */ }
@@ -255,7 +253,7 @@ const animeChat = (() => {
       '<div class="anime-welcome"><h2>今天想看什么？</h2><div>' + suggestions.map(s => '<button type="button" data-chat-suggest>' + s + '</button>').join('') + '</div></div>' +
       '<div class="anime-log" role="log" aria-label="推荐对话" aria-live="polite" aria-relevant="additions"></div>' +
       '<div class="anime-feedback"><span id="animeStatus" role="status"></span><button type="button" data-chat-retry hidden>重试</button><button type="button" data-chat-cancel hidden>取消</button></div>' +
-      '<div id="animeHumanCheck"></div><form class="anime-form"><label for="animeQuestion">告诉罗瓣你的动漫偏好</label><textarea id="animeQuestion" maxlength="360" rows="2" placeholder="说说你喜欢的作品、题材或心情…" aria-describedby="animePrivacy"></textarea><button type="submit">发送</button></form>' +
+      '<form class="anime-form"><label for="animeQuestion">告诉罗瓣你的动漫偏好</label><textarea id="animeQuestion" maxlength="360" rows="2" placeholder="说说你喜欢的作品、题材或心情…" aria-describedby="animePrivacy"></textarea><button type="submit">发送</button></form>' +
       '<p class="anime-privacy" id="animePrivacy">推荐模型会收到本次对话和公开片名。服务由 Cloudflare 或 AI Horde 提供，请勿输入个人信息。</p></section>';
     const root = app.querySelector('#animeChat');
     const input = root.querySelector('textarea');

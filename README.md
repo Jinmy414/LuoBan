@@ -20,7 +20,7 @@ python3.13 -m server.host_config --origin https://YOURNAME.pythonanywhere.com --
 发件地址须在 Brevo 内完成验证。密钥在控制台以隐藏输入方式填写，保存到主目录下的私有配置文件。去掉 `--mail` 可以先发布作品库，之后补充邮件配置并重新加载网站。
 
 3. 在 Web 页选 Add a new web app、Manual configuration 和同一 Python 版本。把 Virtualenv 设为 `/home/YOURNAME/.virtualenvs/luoban`。将该站点新生成的 WSGI 模板替换为 `server/pythonanywhere_wsgi.py` 的内容。
-4. 启用 Force HTTPS 并 Reload。可把静态路径 `/assets/` 指向 `/home/YOURNAME/luoban/assets/`。访问 `/api/session` 应返回 JSON，随后用自己能收信的邮箱完成一次注册。
+4. 启用 Force HTTPS 并 Reload。可把静态路径 `/assets/` 指向 `/home/YOURNAME/luoban/assets/`。打开网站，如果已启用入口验证，先通过验证。随后可用自己能收信的邮箱完成一次注册。
 5. 免费站点每月需在 Web 页续期。备份账号数据时使用 SQLite 的在线备份工具，数据库位于 `instance/accounts.sqlite3`。
 
 [PythonAnywhere 免费档](https://help.pythonanywhere.com/pages/FreeAccountsFeatures/) · [Flask 部署说明](https://help.pythonanywhere.com/pages/Flask/) · [Brevo 免费档](https://help.brevo.com/hc/en-us/articles/208589409-About-Brevo-s-pricing-plans)
@@ -81,4 +81,4 @@ GitHub Pages 和普通静态服务器支持浏览作品。邮箱收信、验证�
 python -m server.host_config --origin https://jinmengyao.pythonanywhere.com --turnstile --workers-ai
 ```
 
-启用 Turnstile 后，登录和发送注册邮件（含重发、老成员认领）均在服务端核验操作和域名。启用 Workers AI 后，访客从站内发送动漫推荐请求将优先使用 Llama 3.3 70B。启用两项时模型入口也会核验 Turnstile。模型额度用完或模型服务不可用时，助手会尝试现有的 AI Horde Qwen。
+启用 Turnstile 后，首次打开网站会先看到入口验证页。服务端核验域名和操作后签发浏览器会话 Cookie，最长有效 12 小时。验证成功后回到原访问地址，登录、发送注册邮件和动漫推荐共用本次通行状态。启用 Workers AI 后，动漫推荐优先使用 Llama 3.3 70B，额度用完或模型暂时不可用时会尝试 AI Horde Qwen。

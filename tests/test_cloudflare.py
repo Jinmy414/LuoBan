@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from server.app import create_app
+from server.cloudflare import VISIT_AGE
 
 
 class CloudflareIntegrationTest(unittest.TestCase):
@@ -11,7 +12,7 @@ class CloudflareIntegrationTest(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.client = create_app({
-            "TESTING": True, "DATABASE": str(Path(folder.name) / "test.sqlite"),
+            "TESTING": True, "DATABASE": str(Path(folder.name) / "accounts.sqlite"),
             "PUBLIC_ORIGIN": "https://example.test", "AUTH_SECRET": "x" * 48,
             "SMTP_FROM": "sender@example.test", "SMTP_HOST": "smtp.example.test",
             "TURNSTILE_SITE_KEY": "public-key", "TURNSTILE_SECRET": "private-widget-value",
@@ -22,49 +23,71 @@ class CloudflareIntegrationTest(unittest.TestCase):
     def post(self, path, **data):
         return self.client.post("/api/" + path, json=data, headers={"Origin": "https://example.test"})
 
-    def verdict(self, action):
-        return {"success": True, "hostname": "example.test", "action": action}
+    def verdict(self):
+        return {"success": True, "hostname": "example.test", "action": "site_entry"}
 
-    def test_widget_is_public_and_keys_are_private(self):
-        result = self.client.get("/api/cloudflare-config")
-        self.assertEqual(result.json, {"siteKey": "public-key", "llama": True})
-        policy = result.headers["Content-Security-Policy"]
-        self.assertIn("script-src 'self' https://challenges.cloudflare.com", policy)
-        self.assertIn("https://challenges.cloudflare.com", policy.split("frame-src")[1])
+    def test_first_navigation_gets_only_entry_and_api_waits(self):
+        for path in ["/", "/index.html"]:
+            result = self.client.get(path)
+            self.assertIn('data-site-key="public-key"', result.text)
+            self.assertNotIn("animation-works.js", result.text)
+            self.assertNotIn("private-widget-value", result.text)
+            self.assertEqual(result.headers["Cache-Control"], "no-store")
+            self.assertIn("https://challenges.cloudflare.com", result.headers["Content-Security-Policy"].split("frame-src")[1])
+        for path in ["session", "works", "cloudflare-config"]:
+            self.assertEqual(self.client.get("/api/" + path).json["code"], "SITE_ENTRY_REQUIRED")
+        self.assertEqual(self.post("login", identity="reader", password="hello").status_code, 403)
+        self.assertEqual(self.post("anime-recommend", **self.query).status_code, 403)
+        with self.client.get("/assets/site-entry.js") as result:
+            self.assertEqual(result.status_code, 200)
+
+    @patch("server.cloudflare.post_json")
+    def test_entry_validates_host_action_and_provider_availability(self, cloud):
+        self.assertEqual(self.post("site-entry").status_code, 403)
+        cloud.assert_not_called()
+        for invalid in [{**self.verdict(), "hostname": "wrong.test"}, {**self.verdict(), "action": "login"},
+                        {"success": False}]:
+            cloud.return_value = invalid
+            result = self.post("site-entry", turnstileToken="example")
+            self.assertEqual(result.status_code, 403)
+            self.assertNotIn("Set-Cookie", result.headers)
+        cloud.side_effect = TimeoutError()
+        self.assertEqual(self.post("site-entry", turnstileToken="test").status_code, 503)
+        self.assertEqual(self.client.get("/api/session").status_code, 403)
 
     @patch("server.app.send_code")
     @patch("server.cloudflare.post_json")
-    def test_email_requires_matching_host_action_and_fresh_token(self, cloud, mail):
-        email = "reader@example.test"
-        self.assertEqual(self.post("email-code", email=email).status_code, 403)
-        cloud.assert_not_called()
-        for invalid in [{**self.verdict("email_code"), "hostname": "wrong.test"},
-                        self.verdict("login"), {"success": False}]:
-            cloud.return_value = invalid
-            self.assertEqual(self.post("email-code", email=email, turnstileToken="test").status_code, 403)
-        mail.assert_not_called()
-        cloud.return_value = self.verdict("email_code")
-        self.assertEqual(self.post("email-code", email=email, turnstileToken="fresh").status_code, 200)
+    def test_verified_visit_works_across_routes_and_ordinary_actions(self, cloud, mail):
+        cloud.return_value = self.verdict()
+        result = self.post("site-entry", turnstileToken="valid")
+        self.assertTrue(result.json["verified"])
+        for flag in ["HttpOnly", "Secure", "SameSite=Lax", "Path=/"]:
+            self.assertIn(flag, result.headers["Set-Cookie"])
+        self.assertNotIn("Max-Age", result.headers["Set-Cookie"])
+        for path in ["/", "/index.html"]:
+            with self.client.get(path) as result:
+                self.assertIn("animation-works.js", result.text)
+                self.assertNotIn("entryWidget", result.text)
+                self.assertEqual(result.headers["Cache-Control"], "no-store")
+        self.assertEqual(self.client.get("/api/cloudflare-config").json, {"llama": True})
+        self.assertEqual(self.post("email-code", email="reader@example.test").status_code, 200)
         mail.assert_called_once()
-        self.assertEqual(cloud.call_args.args[1], {"secret": "private-widget-value", "response": "fresh"})
-
-    @patch("server.app.check_password_hash")
-    @patch("server.cloudflare.post_json", side_effect=TimeoutError)
-    def test_login_stops_on_verification_outage(self, cloud, password):
-        self.assertEqual(self.post("login", identity="u", password="test", turnstileToken="test").status_code, 503)
-        password.assert_not_called()
-
-    @patch("server.cloudflare.post_json")
-    def test_recommendation_checks_token_and_falls_back_on_model_outage(self, cloud):
-        self.assertEqual(self.post("anime-recommend", **self.query).status_code, 403)
-        cloud.return_value = self.verdict("login")
-        self.assertEqual(self.post("anime-recommend", **self.query, turnstileToken="wrong").status_code, 403)
-        cloud.side_effect = [self.verdict("anime_chat"), OSError("quota")]
-        self.assertEqual(self.post("anime-recommend", **self.query, turnstileToken="ok").json, {"fallback": True})
-        cloud.side_effect = [self.verdict("anime_chat"), {"success": True, "result": {"choices": [{"message": {"content": "推荐结果"}}]}}]
-        res = self.post("anime-recommend", **self.query, turnstileToken="ok")
-        self.assertEqual(res.json, {"model": "Llama 3.3 70B", "text": "推荐结果"})
+        self.assertEqual(self.post("login", identity="unknown", password="test").status_code, 401)
+        cloud.assert_called_once()
+        cloud.return_value = {"success": True, "result": {"choices": [{"message": {"content": "推荐结果"}}]}}
+        self.assertEqual(self.post("anime-recommend", **self.query).json, {"model": "Llama 3.3 70B", "text": "推荐结果"})
         url, body, headers = cloud.call_args.args
         self.assertIn("/ai/run/@cf/meta/llama-3.3-70b", url)
         self.assertEqual(headers["Authorization"], "Bearer private-inference-value")
         self.assertNotIn("turnstileToken", str(body))
+        cloud.side_effect = OSError("quota")
+        self.assertEqual(self.post("anime-recommend", **self.query).json, {"fallback": True})
+
+    @patch("server.cloudflare.post_json")
+    def test_visit_expires_and_requires_new_entry(self, cloud):
+        cloud.return_value = self.verdict()
+        with patch("itsdangerous.timed.TimestampSigner.get_timestamp", return_value=10000):
+            self.assertTrue(self.post("site-entry", turnstileToken="test").json["verified"])
+        with patch("itsdangerous.timed.TimestampSigner.get_timestamp", return_value=10000 + VISIT_AGE + 1):
+            self.assertEqual(self.client.get("/api/session").status_code, 403)
+            self.assertIn("entryWidget", self.client.get("/").text)
