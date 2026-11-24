@@ -12,17 +12,18 @@ const cloudflareAccess = (() => {
   }
 
   function widgetScript() {
+    if (loading) return loading;
     if (window.turnstile) return Promise.resolve(window.turnstile);
-    if (!loading) loading = new Promise((resolve, reject) => {
+    loading = new Promise((resolve, reject) => {
       const script = document.createElement('script');
       const failed = () => { clearTimeout(timer); script.remove(); loading = null; reject(new Error('人机验证暂时无法加载，请重试。')); };
       const timer = setTimeout(failed, 15000);
-      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=luobanTurnstileReady&render=explicit';
       script.async = true;
-      script.onload = () => {
+      window.luobanTurnstileReady = () => {
         if (!window.turnstile) { failed(); return; }
         clearTimeout(timer);
-        window.turnstile.ready(() => resolve(window.turnstile));
+        resolve(window.turnstile);
       };
       script.onerror = failed;
       document.head.appendChild(script);
