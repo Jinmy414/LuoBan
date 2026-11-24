@@ -129,12 +129,16 @@ def create_app(overrides=None):
     @app.before_request
     def validate_request():
         if request.path.startswith("/api/") and request.method == "POST":
-            if request.path in {"/api/account", "/api/submissions", "/api/reviews"}:
+            if request.path in {"/api/account", "/api/submissions", "/api/reviews"} or request.path.startswith("/api/episodes/"):
                 request.max_content_length = 3_000_000
             if request.headers.get("Origin") != cfg["PUBLIC_ORIGIN"] or not request.is_json:
                 return fail("请从罗瓣网站重新打开此页面。", 403)
             if not isinstance(request.get_json(silent=True), dict):
                 return fail("请检查表单后重试。")
+
+    @app.errorhandler(413)
+    def oversized_payload(_):
+        return fail("提交的数据太大，请缩小后重试。", 413)
 
     @app.after_request
     def response_headers(response):

@@ -448,6 +448,7 @@ function drawPlayback(target) {
   const link = source => `<a class="play-link" data-watch="${escapeHTML(work.id)}" href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(source.platform)} ↗</a>`;
   target.innerHTML = sources.length ? `<h2>去哪里看</h2><div class="source-links">${sources.slice(0,3).map(link).join('')}</div>${sources.length > 3 ? `<details><summary>更多平台</summary><div class="source-links">${sources.slice(3).map(link).join('')}</div></details>` : ''}`
     : `<h2>查找播放平台</h2><p>暂无直达播放源，可按片名搜索。</p><div class="source-links"><a class="play-link" href="https://search.bilibili.com/bangumi?keyword=${encodeURIComponent(work.title)}" target="_blank" rel="noopener noreferrer">在哔哩哔哩搜索 ↗</a><a class="play-link" href="https://v.qq.com/x/search/?q=${encodeURIComponent(work.title)}" target="_blank" rel="noopener noreferrer">在腾讯视频搜索 ↗</a></div>`;
+  loadEpisodeAccess(work,target);
 }
 document.addEventListener('click', event => {
   const link = event.target.closest('a[data-watch]');
@@ -456,13 +457,15 @@ document.addEventListener('click', event => {
 });
 async function loadWatchHistory(target) {
   try {
+    await progressWrites;
     const {items} = await accountRequest('history');
     if (!target.isConnected) return;
     const rows = items.map(item => {
       const work = getWork(item.id);
       if (!work) return '';
       const when = new Date(item.opened * 1000).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      return `<a class="studio-row" href="#work-${escapeHTML(work.id)}">${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} 打开了${escapeHTML(item.platform)}</small></span><b class="row-link">查看 ›</b></a>`;
+      const description = item.episode ? item.episode + ' · ' + episodeTime(item.seconds) : '打开了' + item.platform;
+      return `<a class="studio-row" href="#work-${escapeHTML(work.id)}" ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} · ${escapeHTML(description)}</small></span><b class="row-link">${item.episode ? '续看' : '查看'} ›</b></a>`;
     }).filter(Boolean);
     target.innerHTML = rows.slice(0,5).join('') || '<p class="studio-empty">从作品详情打开播放源后，记录会出现在这里。</p>';
     if (rows.length > 5) target.insertAdjacentHTML('beforeend',`<details><summary>查看全部 ${rows.length} 部</summary>${rows.slice(5).join('')}</details>`);

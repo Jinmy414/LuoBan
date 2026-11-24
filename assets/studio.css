@@ -154,3 +154,18 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .play-link { display: inline-flex; align-items: center; min-height: 42px; background: white; border: 1px solid #cbdcd0; border-radius: 11px; color: var(--green-deep); font-size: 13px; font-weight: 600; padding: 6px 12px; }
 @media(max-width:640px) { .detail-hero { grid-template-areas: "poster heading" "intro intro" "actions actions" "sources sources"; grid-template-rows: auto; } }
 .app-main:focus { outline: none; }
+.episode-access:not(:empty),.episode-player-head,.episode-player-controls,.episode-import-tools { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.episode-access:not(:empty) { margin:0 0 14px; padding-bottom:14px; border-bottom:1px solid #dce5dd; }
+.episode-access > div,.episode-player-head h2 { flex:1; }
+.episode-access .button,.episode-room button { min-height:44px; }
+.episode-room { scroll-margin-top:105px; padding:clamp(14px,3vw,25px); border:1px solid var(--line); border-radius:22px; margin:0 0 24px; background:white; }
+.episode-player-head h2 { margin:0; font-size:21px; }
+.episode-room video { display:block; width:100%; aspect-ratio:16/9; background:#121814; border-radius:13px; margin:12px 0; }
+.episode-player-controls label { display:grid; gap:3px; flex:1; min-width:100px; color:var(--muted); font-size:13px; }
+.episode-player-controls select { height:44px; width:100%; font-size:16px; padding:4px 8px; color:var(--text); border-radius:10px; border:1px solid var(--line); background:#fff; }
+.episode-player-controls button { align-self:end; }
+.episode-feedback:not(:empty),.episode-import [data-labels],.episode-import [data-existing] { font-size:13px; color:var(--muted); margin-top:9px; overflow-wrap:anywhere; }
+.episode-import { display:grid; gap:12px; min-height:0; }
+.episode-import p { margin:0; }
+.episode-import [hidden],.studio-dialog .sheet-foot [hidden] { display:none; }
+@media(max-width:640px) { .episode-room { scroll-margin-top:155px; } .episode-access:not(:empty) { gap:7px; } }

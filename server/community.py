@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 from flask import Response, jsonify, request, send_from_directory
 from PIL import Image, ImageOps
 
+from . import episodes
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS playback_overrides (work_id TEXT PRIMARY KEY, url TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS watch_history (
@@ -25,7 +27,7 @@ CREATE TABLE IF NOT EXISTS contributions (
 );
 CREATE INDEX IF NOT EXISTS review_queue ON contributions(status, updated);
 CREATE INDEX IF NOT EXISTS author_submissions ON contributions(author_id, updated);
-"""
+""" + episodes.SCHEMA
 WORK_ID = re.compile(r"entry-[0-9a-f]{32}")
 POSTERS = {"mint", "dusk", "sky", "lavender", "lemon", "ink"}
 
@@ -110,6 +112,8 @@ def mount(app, db, active_user, public_user, now, fail, root):
     def admin(user):
         return bool(user and public_user(user)["role"] in {"admin", "superadmin"})
 
+    episodes.mount(app, db, active_user, admin, now, fail, seed_ids)
+
     def entry(row, public=False):
         fields = json.loads(row["live"] if public else row["draft"])
         if public and fields["coverImage"].startswith("data:"):
@@ -172,8 +176,16 @@ def mount(app, db, active_user, public_user, now, fail, root):
                 conn.execute("""INSERT INTO watch_history VALUES (?,?,?,?) ON CONFLICT(user_id,work_id)
                     DO UPDATE SET url=excluded.url,opened=excluded.opened""", (user["id"],key,url,now()))
             return jsonify(ok=True)
-        rows = db().execute("SELECT work_id,url,opened FROM watch_history WHERE user_id=? ORDER BY opened DESC,rowid DESC", (user["id"],))
-        return jsonify(items=[dict(id=r["work_id"],url=r["url"],platform=playback_platform(r["url"]),opened=r["opened"]) for r in rows])
+        rows = db().execute("""SELECT h.*,p.source,p.label,p.seconds FROM watch_history h
+            LEFT JOIN episode_progress p ON h.user_id=p.user_id AND h.work_id=p.work_id
+            WHERE h.user_id=? ORDER BY h.opened DESC,h.rowid DESC""", (user["id"],))
+        items = []
+        for r in rows:
+            item = dict(id=r["work_id"], url=r["url"], platform=playback_platform(r["url"]), opened=r["opened"])
+            if r["url"] == episodes.HISTORY_MARKER:
+                item.update(platform="罗瓣", episode=r["label"], seconds=r["seconds"] or 0)
+            items.append(item)
+        return jsonify(items=items)
 
 
     @app.get("/api/works/<work_id>/cover")
@@ -236,6 +248,8 @@ def mount(app, db, active_user, public_user, now, fail, root):
                 return fail("这部作品已处理或不存在。", 409)
             if action == "delete":
                 conn.execute("DELETE FROM watch_history WHERE work_id=?", (key,))
+                conn.execute("DELETE FROM episode_progress WHERE work_id=?", (key,))
+                conn.execute("DELETE FROM episode_lines WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM contributions WHERE id=?", (key,))
                 return jsonify(ok=True)
             previous = json.loads(row["draft"]) if row else {}

@@ -1,3 +1,4 @@
+import json
 import base64
 import io
 import sqlite3
@@ -114,3 +115,31 @@ class CommunityTest(unittest.TestCase):
         self.as_user(3)
         self.assertEqual(self.client.get("/api/history").json["items"],[])
         self.assertEqual(self.guest.get("/api/history").status_code,401)
+
+    def test_episode_import_permissions_and_private_resume(self):
+        key = next(iter(json.loads((Path(__file__).resolve().parents[1] / "assets/playback.json").read_text())))
+        path = "episodes/" + key
+        data = dict(source="custom", title="分集样例", episodes=[dict(label="第1集",url="https://media.example.test/one.m3u8")])
+        self.as_user(2)
+        self.assertEqual(self.post(path, **data).status_code, 403)
+        self.as_user(1)
+        self.assertEqual(self.post("episodes/unknown", **data).status_code, 404)
+        self.assertEqual(self.post(path, **{**data, "episodes":[dict(label="第1集",url="http://localhost/one.m3u8")]}).status_code, 400)
+        self.assertEqual(self.post(path, **data).status_code, 200)
+        guest = self.guest.get("/api/" + path).json
+        self.assertNotIn("providers", guest)
+        revision = guest["lines"][0]["revision"]
+        self.assertEqual(self.post(path, **data).status_code, 409)
+        self.as_user(2)
+        progress = dict(source="custom", accountId=2, label="第1集", seconds=61, revision=revision)
+        self.assertEqual(self.post("episode-progress/"+key, **progress).status_code, 200)
+        self.assertEqual(self.client.get("/api/history").json["items"][0]["seconds"], 61)
+        self.assertEqual(self.client.get("/api/"+path).json["progress"]["label"], "第1集")
+        self.assertIsNone(self.guest.get("/api/"+path).json["progress"])
+        self.as_user(3)
+        self.assertEqual(self.post("episode-progress/"+key, **progress).status_code, 401)
+        self.as_user(1)
+        self.assertEqual(self.post(path, source="custom",revision=revision,action="remove").status_code,200)
+        self.as_user(2)
+        self.assertEqual(self.post("episode-progress/"+key, **progress).status_code,409)
+        self.assertIsNone(self.client.get("/api/"+path).json["progress"])
