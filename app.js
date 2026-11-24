@@ -43,6 +43,7 @@ let shelfIndex = 0;
 let shownCount = 18;
 let filtersExpanded = false;
 let scrollToCatalog = false;
+let lastHomePosition = null;
 const homeQuotes = shuffle(window.LUOBAN_QUOTES || []).slice(0, 3);
 let selectedRating = null;
 let featuredPopularIds = [];
@@ -353,7 +354,12 @@ function renderApp() {
   const route = currentRoute();
   const app = document.getElementById('app');
   selectedRating = null;
-  if (route === 'home') app.innerHTML = renderHome();
+  if (route === 'home') {
+    const controls = [...app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')];
+    const focusIndex = controls.indexOf(document.activeElement);
+    app.innerHTML = renderHome();
+    if (focusIndex >= 0) app.querySelectorAll('.filter-panel button, .filter-panel select, .filter-panel input')[focusIndex]?.focus({ preventScroll: true });
+  }
   else if (route === 'profile') app.innerHTML = currentUser() ? renderProfile() : loginRequired('登录后查看你的罗瓣', '收藏三部最爱作品，再留下三条最想被看见的评论。');
   else if (route.startsWith('profile-')) app.innerHTML = renderProfile(decodeURIComponent(route.slice(8)));
   else if (route === 'create') app.innerHTML = renderEditor();
@@ -444,6 +450,14 @@ document.addEventListener('touchcancel', () => { touchOrigin = null; });
 
 document.addEventListener('click', async event => {
   const target = event.target;
+  if (target.closest('.skip-link')) {
+    event.preventDefault();
+    document.getElementById('app').focus();
+    return;
+  }
+  if (currentRoute() === 'home' && target.closest('a[href^="#work-"]')) {
+    lastHomePosition = { top: window.scrollY, work: target.closest('a').getAttribute('href') };
+  }
   const shift = target.closest('[data-shift]');
   if (shift) { shiftPick(Number(shift.dataset.shift)); return; }
   if (target.closest('[data-more]')) {
@@ -578,10 +592,15 @@ document.addEventListener('change', event => {
   }
 });
 
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', event => {
   const searching = scrollToCatalog;
   renderApp();
-  if (!searching) { window.scrollTo({ top: 0, behavior: 'instant' }); document.getElementById('app').focus({ preventScroll: true }); }
+  if (searching) return;
+  const restore = currentRoute() === 'home' && new URL(event.oldURL).hash.startsWith('#work-') && lastHomePosition;
+  const focus = restore && [...document.querySelectorAll('#app a')].find(a => a.getAttribute('href') === restore.work);
+  window.scrollTo({ top: restore ? restore.top : 0, behavior: 'instant' });
+  (focus || document.getElementById('app')).focus({ preventScroll: true });
+  if (currentRoute() === 'home') lastHomePosition = null;
 });
 window.addEventListener('keydown', event => {
   if (!authDialog.open && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); document.getElementById('globalSearch').focus(); }
