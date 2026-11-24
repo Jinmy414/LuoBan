@@ -1,4 +1,5 @@
-"""Per-work HLS catalogues. Only the viewer contacts the media host."""
+"""Per-work playback catalogues. Only the viewer contacts the media host."""
+import hashlib
 import ipaddress
 import json
 import re
@@ -19,6 +20,7 @@ CREATE TABLE IF NOT EXISTS episode_progress (
 CREATE TABLE IF NOT EXISTS installed_episode_lines (
  work_id TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY(work_id,source)
 );
+CREATE TABLE IF NOT EXISTS episode_bundle (id INTEGER PRIMARY KEY CHECK(id=1), digest TEXT NOT NULL);
 """
 
 SOURCES = {
@@ -26,7 +28,14 @@ SOURCES = {
     "hongniu": ("红牛资源", "www.hongniuzy2.com"), "liangzi": ("量子资源", "cj.lziapi.com"),
     "feifan": ("非凡资源", "ffzy5.tv"), "jisu": ("极速资源", "jszyapi.com"),
     "baofeng": ("暴风资源", "bfzyapi.com"), "baidu": ("百度资源", "api.apibdzy.com"),
+    "ikun": ("iKun 资源", "ikunzyapi.com"), "ruyi": ("如意资源", "cj.rycjapi.com"),
+    "360": ("360 资源", "360zy.com"),
+    "bilibili": ("哔哩哔哩", ""), "youtube": ("YouTube", ""),
     "custom": ("自定义片源", ""),
+}
+EMBED_URLS = {
+    "bilibili": re.compile(r"https://player\.bilibili\.com/player\.html\?bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}"),
+    "youtube": re.compile(r"https://www\.youtube\.com/embed/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?"),
 }
 HISTORY_MARKER = "luoban:episodes"
 
@@ -49,7 +58,7 @@ def valid_hls_url(value):
         return False
 
 
-def validated_catalogue(data):
+def validated_catalogue(data, source="custom"):
     title, entries = data.get("title"), data.get("episodes")
     if not isinstance(title, str) or not 1 <= len(title.strip()) <= 200:
         raise ValueError("请核对剧集的片名。")
@@ -62,7 +71,11 @@ def validated_catalogue(data):
         label, url = entry.get("label"), entry.get("url")
         if not isinstance(label, str) or not 1 <= len(label.strip()) <= 80 or label.strip() in labels:
             raise ValueError("请为每集提供不同的名称，最多 80 字。")
-        if not valid_hls_url(url):
+        if source in EMBED_URLS:
+            match = EMBED_URLS[source].fullmatch(url) if isinstance(url, str) else None
+            if not match or (source == "youtube" and match[1] and int(match[1]) >= int(match[2])):
+                raise ValueError(f"请提供{SOURCES[source][0]}的分集嵌入地址。")
+        elif not valid_hls_url(url):
             raise ValueError("分集需使用公开的 HTTPS .m3u8 地址。")
         labels.add(label.strip())
         result.append({"label": label.strip(), "url": url})
@@ -70,18 +83,47 @@ def validated_catalogue(data):
 
 
 def install_catalogues(conn, path):
-    """Install each bundled line once. Later edits and removals belong to the administrator."""
-    catalogues = json.loads(path.read_text(encoding="utf-8"))
+    """Reconcile verified provider data while keeping administrator overrides and removals."""
+    raw = path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    def current_digest():
+        return conn.execute("SELECT digest FROM episode_bundle WHERE id=1").fetchone()
+    previous = current_digest()
+    if previous and previous[0] == digest:
+        return
     with conn:
-        for line in catalogues:
+        conn.execute("BEGIN IMMEDIATE")
+        previous = current_digest()
+        if previous and previous[0] == digest:
+            return
+        installed = set(conn.execute("SELECT work_id,source FROM installed_episode_lines"))
+        existing = {(work, source): (revision, title, body) for work, source, revision, title, body in
+                    conn.execute("SELECT work_id,source,revision,title,episodes FROM episode_lines")}
+        keys = set()
+        for line in json.loads(raw):
             key = (line["work"], line["source"])
-            installed = conn.execute("INSERT OR IGNORE INTO installed_episode_lines VALUES (?,?)", key)
-            if not installed.rowcount:
-                continue
+            if key in keys or key[1] not in SOURCES:
+                raise ValueError(f"Invalid bundled source: {key}")
+            keys.add(key)
             entries = [dict(label=f"第{i}集", url=url) for i, url in enumerate(line["urls"], 1)]
-            title, body = validated_catalogue(dict(title=line["title"], episodes=entries))
-            conn.execute("INSERT OR IGNORE INTO episode_lines VALUES (?,?,?,?,?)",
-                         (*key, secrets.token_hex(8), title, body))
+            title, body = validated_catalogue(dict(title=line["title"], episodes=entries), key[1])
+            revision = "seed:" + hashlib.sha256((title + "\n" + body).encode()).hexdigest()[:24]
+            old = existing.get(key)
+            if key not in installed:
+                conn.execute("INSERT INTO installed_episode_lines VALUES (?,?)", key)
+                conn.execute("INSERT OR IGNORE INTO episode_lines VALUES (?,?,?,?,?)", (*key, revision, title, body))
+            elif old and old[0] != revision:
+                # Earlier releases used a random revision. Adopt only unchanged copies on upgrade.
+                if old[0].startswith("seed:") or (not previous and old[1:] == (title, body)):
+                    conn.execute("UPDATE episode_lines SET revision=?,title=?,episodes=? WHERE work_id=? AND source=?",
+                                 (revision, title, body, *key))
+        for key in installed - keys:
+            old = existing.get(key)
+            if old and old[0].startswith("seed:"):
+                conn.execute("DELETE FROM episode_lines WHERE work_id=? AND source=?", key)
+                conn.execute("DELETE FROM episode_progress WHERE work_id=? AND source=?", key)
+                conn.execute("DELETE FROM installed_episode_lines WHERE work_id=? AND source=?", key)
+        conn.execute("INSERT OR REPLACE INTO episode_bundle VALUES (1,?)", (digest,))
 
 
 def mount(app, db, active_user, admin, now, fail, seed_ids):
@@ -122,7 +164,7 @@ def mount(app, db, active_user, admin, now, fail, seed_ids):
                 conn.execute("DELETE FROM episode_progress WHERE work_id=? AND source=?", (key,source))
             else:
                 try:
-                    title, body = validated_catalogue(data)
+                    title, body = validated_catalogue(data, source)
                 except ValueError as error:
                     return fail(str(error))
                 conn.execute("""INSERT INTO episode_lines VALUES (?,?,?,?,?) ON CONFLICT(work_id,source)

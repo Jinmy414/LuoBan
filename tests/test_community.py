@@ -132,6 +132,37 @@ class CommunityTest(unittest.TestCase):
         restarted = create_app(self.app.config).test_client()
         self.assertNotIn(line["source"], [r["source"] for r in restarted.get("/api/" + path).json["lines"]])
 
+    def test_platform_embeds_are_bound_to_provider_and_episode(self):
+        from server.episodes import validated_catalogue
+        url = "https://www.youtube.com/embed/MAIpv5WnqoY"
+        data = dict(title="开心宝贝", episodes=[dict(label="第2集", url=url + "?start=699&end=1338")])
+        self.assertIn("start=699", validated_catalogue(data, "youtube")[1])
+        with self.assertRaises(ValueError):
+            validated_catalogue(data, "bilibili")
+        for invalid in (url + "?start=699&end=7", url + "?list=other", url.replace("www.youtube.com", "example.org")):
+            data["episodes"][0]["url"] = invalid
+            with self.assertRaises(ValueError):
+                validated_catalogue(data, "youtube")
+
+    def test_catalogue_refresh_updates_only_bundled_lines(self):
+        from server.episodes import install_catalogues, SCHEMA
+        with tempfile.TemporaryDirectory() as directory, closing(sqlite3.connect(":memory:")) as conn:
+            data = Path(directory) / "verified.json"
+            conn.executescript(SCHEMA)
+            def save(sources, suffix):
+                data.write_text(json.dumps([dict(work="work", source=source, title=source,
+                    urls=[f"https://example.org/{suffix}.m3u8"]) for source in sources]))
+                install_catalogues(conn, data)
+            save(["modu", "jinying", "hongniu"], "before")
+            with conn:
+                conn.execute("UPDATE episode_lines SET revision='admin', title='自定义' WHERE source='hongniu'")
+            save(["modu", "hongniu"], "after")
+            found = {r[0]: r[1:] for r in conn.execute("SELECT source,title,episodes FROM episode_lines")}
+            self.assertEqual(set(found), {"modu", "hongniu"})
+            self.assertIn("after.m3u8", found["modu"][1])
+            self.assertEqual(found["hongniu"][0], "自定义")
+            self.assertIn("before.m3u8", found["hongniu"][1])
+
     def test_episode_import_permissions_and_private_resume(self):
         key = next(iter(json.loads((Path(__file__).resolve().parents[1] / "assets/playback.json").read_text())))
         path = "episodes/" + key
@@ -144,7 +175,7 @@ class CommunityTest(unittest.TestCase):
         self.assertEqual(self.post(path, **data).status_code, 200)
         guest = self.guest.get("/api/" + path).json
         self.assertNotIn("providers", guest)
-        revision = guest["lines"][0]["revision"]
+        revision = next(l["revision"] for l in guest["lines"] if l["source"] == "custom")
         self.assertEqual(self.post(path, **data).status_code, 409)
         self.as_user(2)
         progress = dict(source="custom", accountId=2, label="第1集", seconds=61, revision=revision)

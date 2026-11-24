@@ -183,7 +183,9 @@ def mount(app, db, active_user, public_user, now, fail, root):
         for r in rows:
             item = dict(id=r["work_id"], url=r["url"], platform=playback_platform(r["url"]), opened=r["opened"])
             if r["url"] == episodes.HISTORY_MARKER:
-                item.update(platform="罗瓣", episode=r["label"], seconds=r["seconds"] or 0)
+                embedded = r["source"] in episodes.EMBED_URLS
+                item.update(platform=episodes.SOURCES[r["source"]][0] if embedded else "罗瓣", episode=r["label"],
+                            seconds=None if embedded else (r["seconds"] or 0))
             items.append(item)
         return jsonify(items=items)
 

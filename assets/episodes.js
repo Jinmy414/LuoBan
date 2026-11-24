@@ -22,7 +22,20 @@ function episodeTime(seconds) {
   );
 }
 
-function parseEpisodeGroups(input, workTitle) {
+const episodeEmbedProviders = {
+  bilibili: { pattern: /^https:\/\/player\.bilibili\.com\/player\.html\?bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}$/, example: 'https://player.bilibili.com/player.html?bvid=BV…&p=1' },
+  youtube: { pattern: /^https:\/\/www\.youtube\.com\/embed\/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?$/, example: 'https://www.youtube.com/embed/视频ID' }
+};
+
+function validEpisodeUrl(url, source) {
+  if (url.protocol !== 'https:' || url.username || url.password) return false;
+  const provider = episodeEmbedProviders[source];
+  if (!provider) return url.pathname.toLowerCase().endsWith('.m3u8');
+  const match = provider.pattern.exec(url.href);
+  return Boolean(match && (!match[1] || Number(match[1]) < Number(match[2])));
+}
+
+function parseEpisodeGroups(input, workTitle, source = 'custom') {
   const text = input.replace(/^\uFEFF/, '').trim();
   if (!text || text.length > 8_000_000) throw Error('请粘贴分集数据，或选择 8 MB 以内的文件。');
   const json = /^[\[{]/.test(text) ? JSON.parse(text) : { vod_name: workTitle, vod_play_url: text };
@@ -53,13 +66,7 @@ function parseEpisodeGroups(input, workTitle) {
         } catch {
           return;
         }
-        if (
-          url.protocol !== 'https:' ||
-          !url.pathname.toLowerCase().endsWith('.m3u8') ||
-          url.username ||
-          url.password
-        )
-          return;
+        if (!validEpisodeUrl(url, source)) return;
         labels.add(label);
         episodes.push({ label, url: url.href });
       }
@@ -72,7 +79,7 @@ function parseEpisodeGroups(input, workTitle) {
   }
   if (!choices.length)
     throw Error(
-      '未找到完整的 HTTPS HLS 分集。请使用包含 vod_play_url 的详情 JSON，或每行填写「集名$https://…m3u8」。'
+      episodeEmbedProviders[source] ? '请逐行填写集名和所选平台的嵌入地址。' : '未找到完整的 HTTPS HLS 分集。请使用包含 vod_play_url 的详情 JSON，或每行填写「集名$https://…m3u8」。'
     );
   return choices;
 }
@@ -121,6 +128,9 @@ function openEpisodeImport(work, catalogue, opener, updated) {
     if (selected.host)
       lookup.href =
         'https://' + selected.host + '/api.php/provide/vod/?ac=videolist&wd=' + encodeURIComponent(work.title);
+    payload.placeholder = episodeEmbedProviders[selected.id]
+      ? '每行一集：第1集$' + episodeEmbedProviders[selected.id].example
+      : '粘贴片源目录返回的 JSON，或每行一条 集名$https://…m3u8';
     const current = currentLine();
     q('[data-existing]').textContent = current
       ? `当前线路为《${current.title}》，共 ${current.episodes.length} 集。保存时将更新这条线路。`
@@ -137,7 +147,7 @@ function openEpisodeImport(work, catalogue, opener, updated) {
   function parse() {
     reset();
     try {
-      choices = parseEpisodeGroups(payload.value, work.title);
+      choices = parseEpisodeGroups(payload.value, work.title, source.value);
       candidate.innerHTML =
         '<option value="">选择要导入的版本</option>' +
         choices.map((c, i) => `<option value="${i}">${escapeHTML(c.description)}</option>`).join('');
@@ -246,7 +256,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       </button>
       <video hidden controls playsinline preload="none" aria-label="${escapeHTML(work.title)}"></video>
     </div>
-    <div class="episode-player-controls"><label>播放线路<select name="line">${catalogue.lines.map((l) => `<option value="${escapeHTML(l.source)}">${escapeHTML(l.name)}</option>`).join('')}</select></label>
+    <div class="episode-player-controls"><label>播放线路<select name="line"></select></label>
     <label>选集<select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
     <div class="episode-feedback" role="status"></div>`;
   const video = room.querySelector('video'),
@@ -256,6 +266,12 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     feedback = room.querySelector('[role=status]');
   const preview = room.querySelector('[data-play-episodes]');
   const playLabel = room.querySelector('[data-play-label]');
+  const labels = [...new Set(catalogue.lines.flatMap(l => l.episodes.map(e => e.label)))];
+  if (labels.every(label => /^第\d+集$/.test(label))) labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
+  picker.innerHTML = labels.map((label, i) => `<option value="${i}">${escapeHTML(label)}</option>`).join('');
+  room.querySelector('[data-count]').textContent = '共 ' + labels.length + ' 集';
+  const failed = new Set();
+  let frame, loadTimer;
   let line,
     entry,
     hls = null,
@@ -278,7 +294,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     }
   }
   function persist() {
-    if (!hasPlayed || !entry || !accountId || activeAccount?.id !== accountId || attaching) return;
+    if (!hasPlayed || !entry || !accountId || activeAccount?.id !== accountId || attaching || frame) return;
     const seconds = Math.floor(video.currentTime);
     if (!Number.isFinite(seconds) || seconds === recorded) return;
     recorded = seconds;
@@ -304,6 +320,9 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   }
   function release() {
     attaching = true;
+    clearTimeout(loadTimer);
+    frame?.remove();
+    frame = null;
     video.pause();
     hls?.destroy();
     hls = null;
@@ -338,40 +357,88 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     line = chosenLine;
     entry = line.episodes.find((e) => e.label === label) || line.episodes[0];
     resume = seconds;
-    source.value = line.source;
-    picker.innerHTML = line.episodes
-      .map((e, i) => `<option value="${i}">${escapeHTML(e.label)}</option>`)
-      .join('');
-    picker.value = String(line.episodes.indexOf(entry));
-    next.disabled = Number(picker.value) >= line.episodes.length - 1;
-    room.querySelector('[data-count]').textContent = '共 ' + line.episodes.length + ' 集';
+    const available = choices(entry.label);
+    source.innerHTML = available.map(l => `<option value="${escapeHTML(l.source)}">${escapeHTML(l.name)}</option>`).join('') ||
+      '<option value="">本集暂不可用</option>';
+    if (available.includes(line)) source.value = line.source;
+    source.disabled = available.length < 2;
+    picker.value = String(labels.indexOf(entry.label));
+    next.disabled = Number(picker.value) >= labels.length - 1;
     playLabel.textContent = seconds > 0 ? '续看' + entry.label + ' · ' + episodeTime(seconds) : '播放' + entry.label;
+  }
+  function choices(label) {
+    return catalogue.lines.filter(l => l.episodes.some(e => e.label === label && !failed.has(e.url)));
+  }
+  function unavailable(token) {
+    if (stopped || generation !== token || attaching) return;
+    if (!navigator.onLine) {
+      clearTimeout(loadTimer);
+      report('网络已断开，连接后可以重试。', true);
+      return;
+    }
+    const seconds = Math.floor(video.currentTime) || resume;
+    failed.add(entry.url);
+    const alternative = choices(entry.label)[0];
+    if (alternative) {
+      start(alternative, entry.label, seconds);
+      return;
+    }
+    persist();
+    generation++;
+    release();
+    select(line, entry.label, seconds);
+    video.hidden = true;
+    preview.hidden = false;
+    playLabel.textContent = '重新检测' + entry.label;
+    report('本集线路暂时无法播放，可以重新检测或选择其他集。');
   }
   async function start(chosenLine, label, seconds) {
     persist();
-    release();
     const token = ++generation;
+    release();
     select(chosenLine, label, seconds);
     preview.hidden = true;
     video.hidden = false;
     report('正在连接 ' + line.name + '…');
+    if (episodeEmbedProviders[line.source]) {
+      video.hidden = true;
+      frame = document.createElement('iframe');
+      frame.title = work.title + ' · ' + entry.label + ' · ' + line.name + ' 播放器';
+      frame.allow = 'autoplay; fullscreen; picture-in-picture';
+      frame.allowFullscreen = true;
+      frame.referrerPolicy = 'strict-origin-when-cross-origin';
+      const embedUrl = new URL(entry.url);
+      embedUrl.searchParams.set('autoplay', '1');
+      frame.src = embedUrl.href;
+      room.querySelector('.episode-stage').append(frame);
+      frame.onload = () => { if (generation === token) report(''); };
+      if (accountId) {
+        const data = { accountId, source: line.source, revision: line.revision, label: entry.label, seconds: 0 };
+        progressWrites = progressWrites.then(() => {
+          if (activeAccount?.id === accountId) return accountRequest('episode-progress/' + encodeURIComponent(work.id), data);
+        }).catch(() => { if (generation === token) report('本集观看记录未同步。'); });
+      }
+      return;
+    }
     try {
       const hasMediaSource = window.MediaSource || window.ManagedMediaSource;
       const Hls = hasMediaSource ? await loadHlsLibrary() : null;
       if (token !== generation || stopped) return;
+      loadTimer = setTimeout(() => { if (video.readyState < 2) unavailable(token); }, 20000);
       if (!Hls?.isSupported()) {
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
           attaching = false;
           video.src = entry.url;
           tryPlay(token);
         } else {
-          report('此浏览器无法播放 HLS，请选择下方的平台入口。');
+          clearTimeout(loadTimer);
+          report('此浏览器不支持 HLS 播放。');
         }
         return;
       }
       hls = new Hls({ capLevelToPlayerSize: true });
       hls.on(Hls.Events.ERROR, (_, d) => {
-        if (token === generation && d.fatal) report('这条线路暂时无法播放，可重试或切换线路。', true);
+        if (d.fatal) unavailable(token);
       });
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (token === generation) tryPlay(token);
@@ -383,6 +450,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       if (token === generation) report(e.message, true);
     }
   }
+  video.onloadeddata = () => clearTimeout(loadTimer);
   video.onloadedmetadata = () => {
     if (resume > 0 && Number.isFinite(video.duration)) {
       if (resume < video.duration - 1) video.currentTime = resume;
@@ -406,15 +474,31 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     if (!attaching) persist();
   };
   video.onerror = () => {
-    if (!stopped && !attaching && video.error) report('播放失败，可重试或切换线路。', true);
+    if (video.error) unavailable(generation);
   };
   function choose(chosenLine, label, seconds) {
     if (preview.hidden) start(chosenLine, label, seconds);
     else select(chosenLine, label, seconds);
   }
+  function chooseEpisode(label) {
+    const available = choices(label);
+    const selected = available.includes(line) ? line : available[0];
+    if (selected) { report(''); choose(selected, label, 0); }
+    else {
+      const original = catalogue.lines.find(l => l.episodes.some(e => e.label === label));
+      persist();
+      generation++;
+      release();
+      select(original, label, 0);
+      video.hidden = true;
+      preview.hidden = false;
+      playLabel.textContent = '重新检测' + label;
+      report('本集线路暂时无法播放。');
+    }
+  }
   const advance = () => {
-    const e = line.episodes[Number(picker.value) + 1];
-    if (e) choose(line, e.label, 0);
+    const label = labels[Number(picker.value) + 1];
+    if (label) chooseEpisode(label);
   };
   video.onended = () => {
     persist();
@@ -425,12 +509,18 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     const match = chosen.episodes.find((e) => e.label === entry.label);
     choose(chosen, match?.label || chosen.episodes[0].label, match ? (Math.floor(video.currentTime) || resume) : 0);
   };
-  picker.onchange = () => choose(line, line.episodes[Number(picker.value)].label, 0);
+  picker.onchange = () => chooseEpisode(labels[Number(picker.value)]);
   next.onclick = advance;
   select(catalogue.lines.find((l) => l.source === initialSource) || catalogue.lines[0], initialLabel, initialSeconds || 0);
   preview.onclick = () => {
+    if (!choices(entry.label).length) {
+      for (const candidate of catalogue.lines) {
+        const e = candidate.episodes.find(e => e.label === entry.label);
+        if (e) failed.delete(e.url);
+      }
+    }
     start(line, entry.label, resume);
-    video.focus({ preventScroll: true });
+    (frame || video).focus({ preventScroll: true });
   };
   if (resumeRequested) {
     preview.click();
@@ -461,6 +551,7 @@ async function loadEpisodeAccess(work, target) {
         playEpisodes(work, catalogue, line.source, resume ? progress.label : line.episodes[0].label,
           resume ? progress.seconds : 0, resumeRequested);
       }
+      if (!line) access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的播放线路。</p>');
       const opener = access.querySelector('[data-import]');
       if (opener)
         opener.onclick = () =>
@@ -469,7 +560,7 @@ async function loadEpisodeAccess(work, target) {
             await refresh();
           });
     } catch (e) {
-      if (access.isConnected && isAdmin()) {
+      if (access.isConnected) {
         access.textContent = e.message + ' ';
         const retry = document.createElement('button');
         retry.textContent = '重新读取分集';

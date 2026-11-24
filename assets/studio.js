@@ -4,8 +4,6 @@ const submissionStatus = {pending: '待审核', approved: '已发布', rejected:
 let avatarRevision = 0;
 let publishedRevision = 0;
 let playbackOverrides = {};
-let catalogueSources = {};
-const catalogueReady = fetch('assets/playback.json').then(response => response.json()).then(data => { catalogueSources = data; }).catch(() => {});
 
 function avatarURL(name) {
   return 'api/avatars/' + encodeURIComponent(name) + '?v=' + avatarRevision;
@@ -223,7 +221,7 @@ function renderEditor(editId = '', submission = null, review = false) {
     <div class="field-pair"><label class="studio-field">地区<select name="region">${REGION_OPTIONS.map(r => `<option ${work?.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
     <label class="studio-field">年份<input type="number" name="year" min="1900" max="2100" inputmode="numeric" required value="${Number(work?.year) || new Date().getFullYear()}"></label></div>
     <fieldset><legend>作品类型 <small>可多选</small></legend><div class="type-choices">${options.slice(0,10).map(typeChip).join('')}</div>${options.length > 10 ? `<details class="more-types" ${selected.length > 10 ? 'open' : ''}><summary>更多类型</summary><div class="type-choices">${options.slice(10).map(typeChip).join('')}</div></details>` : ''}</fieldset>
-    ${!legacy || (isAdmin(user) && work.id.startsWith('animation-')) ? `<label class="studio-field">播放源 <small>选填</small><input type="url" name="playbackUrl" value="${escapeHTML(work?.playbackUrl || playbackOverrides[work?.id] || '')}" placeholder="粘贴官方平台的作品网址"><small>支持哔哩哔哩、腾讯视频、爱奇艺、优酷等平台</small></label>` : ''}
+    ${!legacy || (isAdmin(user) && work.id.startsWith('animation-')) ? `<label class="studio-field">官方作品页 <small>选填</small><input type="url" name="playbackUrl" value="${escapeHTML(work?.playbackUrl || playbackOverrides[work?.id] || '')}" placeholder="粘贴官方平台的作品网址"><small>供审核时核对作品，支持哔哩哔哩、腾讯视频等平台</small></label>` : ''}
     <label class="studio-field">作品介绍 <small>选填</small><textarea name="summary" maxlength="2400" rows="3" placeholder="用几句话介绍这部作品">${escapeHTML(work?.summary || '')}</textarea></label></section>
     <section class="studio-panel form-stack"><h2>作品封面</h2><div class="cover-sample"><div class="sample-art" style="background-image:${POSTER_OPTIONS[style]}"><img alt="" ${safeImage(work?.coverImage) ? 'src="' + escapeHTML(work.coverImage) + '"' : 'hidden'}><b>${escapeHTML((work?.title || '作').slice(0,1))}</b></div><div><small>封面预览</small><strong data-sample-title>${escapeHTML(work?.title || '作品名称')}</strong><span data-sample-meta></span></div></div>
     <fieldset><legend>封面配色</legend><div class="swatches">${Object.entries(posterNames).map(([key,name]) => `<label title="${name}"><input type="radio" name="poster" aria-label="${name}" value="${key}" ${key === style ? 'checked' : ''}><span style="background-image:${POSTER_OPTIONS[key]}"></span></label>`).join('')}</div></fieldset>
@@ -362,7 +360,10 @@ async function loadStudioSections(route) {
   const history = document.getElementById('watchHistory');
   if (history) loadWatchHistory(history);
   const play = document.getElementById('playbackLinks');
-  if (play) catalogueReady.then(() => { if (play.isConnected) drawPlayback(play); });
+  if (play) {
+    const work = getWork(play.dataset.work);
+    if (work) loadEpisodeAccess(work, play);
+  }
   const roles = document.getElementById('editorRoles');
   if (roles) {
     renderEditorRoles(roles);
@@ -439,22 +440,6 @@ async function loadMemberInvites(target) {
     };
   } catch (error) { target.textContent = error.message; }
 }
-function drawPlayback(target) {
-  const work = getWork(target.dataset.work);
-  if (!work) return;
-  const sources = [...(catalogueSources[work.id] || [])];
-  const curated = work.playbackUrl || playbackOverrides[work.id];
-  if (curated && !sources.some(s => s.url === curated)) sources.unshift({url:curated,platform:'官方播放'});
-  const link = source => `<a class="play-link" data-watch="${escapeHTML(work.id)}" href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(source.platform)} ↗</a>`;
-  target.innerHTML = sources.length ? `<h2>去哪里看</h2><div class="source-links">${sources.slice(0,3).map(link).join('')}</div>${sources.length > 3 ? `<details><summary>更多平台</summary><div class="source-links">${sources.slice(3).map(link).join('')}</div></details>` : ''}`
-    : `<h2>查找播放平台</h2><p>暂无直达播放源，可按片名搜索。</p><div class="source-links"><a class="play-link" href="https://search.bilibili.com/bangumi?keyword=${encodeURIComponent(work.title)}" target="_blank" rel="noopener noreferrer">在哔哩哔哩搜索 ↗</a><a class="play-link" href="https://v.qq.com/x/search/?q=${encodeURIComponent(work.title)}" target="_blank" rel="noopener noreferrer">在腾讯视频搜索 ↗</a></div>`;
-  loadEpisodeAccess(work,target);
-}
-document.addEventListener('click', event => {
-  const link = event.target.closest('a[data-watch]');
-  if (!link || !currentUser()) return;
-  accountRequest('history',{id:link.dataset.watch,url:link.getAttribute('href')}).catch(error => showToast('观看记录未保存。' + error.message));
-});
 async function loadWatchHistory(target) {
   try {
     await progressWrites;
@@ -464,7 +449,8 @@ async function loadWatchHistory(target) {
       const work = getWork(item.id);
       if (!work) return '';
       const when = new Date(item.opened * 1000).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      const description = item.episode ? item.episode + ' · ' + episodeTime(item.seconds) : '打开了' + item.platform;
+      const description = item.episode && item.seconds !== null ? item.episode + ' · ' + episodeTime(item.seconds)
+        : '打开了' + item.platform + (item.episode ? ' · ' + item.episode : '');
       return `<a class="studio-row" href="#work-${escapeHTML(work.id)}" ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} · ${escapeHTML(description)}</small></span><b class="row-link">${item.episode ? '续看' : '查看'} ›</b></a>`;
     }).filter(Boolean);
     target.innerHTML = rows.slice(0,5).join('') || '<p class="studio-empty">从作品详情打开播放源后，记录会出现在这里。</p>';
