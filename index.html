@@ -1,77 +1,43 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="罗瓣是一座把喜欢的动画、电影与故事放在一起的作品社区。" />
-    <meta name="theme-color" content="#0f4f47" />
-    <title>罗瓣 · 作品发现社区</title>
-    <link rel="icon" href="assets/logo.png" type="image/png" />
-    <link rel="stylesheet" href="styles.css?v=20260923-7" />
-  </head>
-  <body>
-    <div class="site-shell">
-      <header class="site-header">
-        <div class="utility-bar">
-          <div class="utility-inner"><a href="#home">罗瓣首页</a><span>作品</span><a href="#profile">用户</a><span>小组</span><span>关于罗瓣</span><span class="utility-spacer"></span><span>发现你喜欢的一切</span></div>
-        </div>
-        <div class="header-inner">
-          <a class="brand" href="#home" aria-label="罗瓣首页">
-            <span class="brand-mark" aria-hidden="true"><img src="assets/logo-snail.png" alt="" /></span>
-            <span class="brand-copy"><strong>罗瓣</strong><small>喜欢的作品，慢慢聊</small></span>
-          </a>
-          <nav class="main-nav" aria-label="主导航">
-            <a class="nav-link is-active" href="#home" data-nav="home">发现</a>
-            <a class="nav-link" href="#profile" data-nav="profile">我的罗瓣</a>
-            <a class="nav-link" href="#create" data-nav="create">创建作品</a>
-          </nav>
-          <form class="header-search" id="headerSearch" role="search">
-            <span aria-hidden="true">⌕</span>
-            <input id="globalSearch" name="q" type="search" placeholder="搜索作品、类型或地区" autocomplete="off" />
-            <kbd>⌘ K</kbd>
-          </form>
-          <div class="header-user" id="headerUser"></div>
-        </div>
-      </header>
-
-      <main id="app" class="app-main" tabindex="-1"></main>
-
-      <footer class="site-footer">
-        <div class="footer-inner">
-          <div><span class="footer-logo">罗瓣</span><span class="footer-note">把喜欢的东西，留在同一页。</span></div>
-          <span class="footer-note">静态演示 · 数据保存在当前浏览器</span>
-        </div>
-      </footer>
-    </div>
-
-    <div class="modal-backdrop is-hidden" id="modalBackdrop" aria-hidden="true">
-      <section class="modal" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
-        <button class="modal-close" type="button" data-close-modal aria-label="关闭">×</button>
-        <div class="modal-kicker">欢迎回到罗瓣</div>
-        <h2 id="authTitle">登录后，开始留下你的分数</h2>
-        <div class="auth-tabs" role="tablist">
-          <button class="auth-tab is-active" type="button" data-auth-tab="login">登录</button>
-          <button class="auth-tab" type="button" data-auth-tab="register">注册</button>
-        </div>
-        <form id="authForm" class="stack-form">
-          <label><span>英文用户名</span><input id="authUsername" name="username" required placeholder="例如 luoban_user" autocomplete="username" /></label>
-          <label><span>密码</span><input id="authPassword" name="password" type="password" required placeholder="输入密码" autocomplete="current-password" /></label>
-          <p class="form-hint" id="authHint">管理员请使用“管理员入口”；普通用户输入自己的账号。</p>
-          <button class="button button-primary button-wide" type="submit" id="authSubmit">登录罗瓣</button>
-          <p class="form-error" id="authError" role="alert"></p>
-          <button class="admin-entry-link" type="button" data-admin-entry>管理员入口</button>
-        </form>
-      </section>
-
-      <section class="modal is-hidden" id="workModal" role="dialog" aria-modal="true" aria-labelledby="workModalTitle">
-        <button class="modal-close" type="button" data-close-modal aria-label="关闭">×</button>
-        <div id="workModalContent"></div>
-      </section>
-    </div>
-
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="assets/animation-works.js?v=20260923-7"></script>
-    <script src="assets/quotes.js?v=20260923-2"></script>
-    <script src="app.js?v=20260923-7"></script>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="description" content="在罗瓣发现动画，收藏喜欢的作品，留下自己的评分和短评。">
+  <meta name="theme-color" content="#f7f8fa">
+  <title>罗瓣 · 作品发现</title>
+  <link rel="icon" href="assets/logo-snail.png" type="image/png">
+  <link rel="stylesheet" href="styles.css?v=20261124">
+</head>
+<body>
+  <a class="skip-link" href="#app">跳到主要内容</a>
+  <div class="site-shell">
+    <header class="site-header"><div class="header-inner">
+      <a class="brand" href="#home" aria-label="罗瓣首页"><span class="brand-mark"><img src="assets/logo-snail.png" alt=""></span><span class="brand-copy"><strong>罗瓣</strong></span></a>
+      <nav class="main-nav" aria-label="主导航">
+        <a class="nav-link" href="#home" data-nav="home">发现</a>
+        <a class="nav-link" href="#create" data-nav="create">创建作品</a>
+        <a class="nav-link" href="#profile" data-nav="profile">我的罗瓣</a>
+      </nav>
+      <form class="header-search" id="headerSearch" role="search">
+        <button type="submit" class="search-icon" aria-label="搜索"></button>
+        <input id="globalSearch" name="q" type="search" aria-label="搜索作品、类型或地区" placeholder="搜索作品、类型或地区" autocomplete="off">
+        <kbd aria-hidden="true">⌘ K</kbd>
+      </form>
+      <div class="header-user" id="headerUser"></div>
+    </div></header>
+    <main class="app-main" id="app" tabindex="-1"></main>
+    <footer class="site-footer"><div class="footer-inner"><a class="footer-logo" href="#home">罗瓣</a><span class="footer-note">收藏、评分与短评保存在当前浏览器</span></div></footer>
+  </div>
+  <dialog class="auth-sheet" id="authModal" aria-labelledby="authTitle">
+    <button type="button" class="modal-close" data-close-auth aria-label="关闭">×</button>
+    <img class="auth-logo" src="assets/logo-snail.png" alt="">
+    <div id="authBody"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="assets/animation-works.js?v=20260923-7"></script>
+  <script src="assets/quotes.js?v=20260923-2"></script>
+  <script src="auth.js?v=20261124"></script>
+  <script src="app.js?v=20261124"></script>
+</body>
 </html>

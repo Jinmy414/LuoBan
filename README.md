@@ -1,35 +1,57 @@
 # 罗瓣
 
-罗瓣是一个基于原生 HTML、CSS 和 JavaScript 的静态作品发现社区原型，适合直接部署到 GitHub Pages。
+动画作品发现社区。首页支持滑动选片、随机高分推荐、条件筛选、搜索和分批浏览。账号保存在服务端 SQLite。作品、收藏、评分、点赞和评论沿用浏览器本地存储。换设备或网站域名时，使用同一个账号可以登录，浏览器中的个人内容仍留在原设备和域名。
 
-## 本地预览
+注册依次填写邮箱、输入六位验证码、设置用户名和密码。验证码有效期为 10 分钟，60 秒后可以重发。验证成功后有 15 分钟完成注册。之后可用用户名或邮箱加密码登录。个人主页可以修改用户名和密码，修改密码会撤销旧会话。
 
-在此文件夹中启动任意静态服务器即可，例如：
+Excel 名单上的 11 个单字名已保留，历史评论和评分继续按原名展示。有了管理员核实的邮箱对应表后，再办理旧账号绑定。初始示范密码已停用。管理员可在后端设置 `ADMIN_EMAIL` 为自己控制的邮箱，完成正常注册和验证后即可进入管理后台。
+
+## PythonAnywhere 免费部署
+
+1. 在 Beginner 账户的 Bash 控制台把本分支克隆到 `~/luoban`。使用本账号支持的 Python 版本，以下以 3.13 为例。
+2. 在项目目录运行以下命令。将示例域名换成 Web 页面显示的实际网址。
 
 ```bash
-python -m http.server 4173
+python3.13 -m venv ~/.virtualenvs/luoban
+~/.virtualenvs/luoban/bin/pip install -r requirements.txt
+python3.13 -m server.host_config --origin https://YOURNAME.pythonanywhere.com --mail
 ```
 
-然后打开 `http://localhost:4173/`。
+发件地址须在 Brevo 内完成验证。密钥在控制台以隐藏输入方式填写，保存到主目录下的私有配置文件。去掉 `--mail` 可以先发布作品库，之后补充邮件配置并重新加载网站。
 
-## 已实现
+3. 在 Web 页选 Add a new web app、Manual configuration 和同一 Python 版本。把 Virtualenv 设为 `/home/YOURNAME/.virtualenvs/luoban`。将该站点新生成的 WSGI 模板替换为 `server/pythonanywhere_wsgi.py` 的内容。
+4. 启用 Force HTTPS 并 Reload。可把静态路径 `/assets/` 指向 `/home/YOURNAME/luoban/assets/`。访问 `/api/session` 应返回 JSON，随后用自己能收信的邮箱完成一次注册。
+5. 免费站点每月需在 Web 页续期。备份账号数据时使用 SQLite 的在线备份工具，数据库位于 `instance/accounts.sqlite3`。
 
-- 热门高分 / 冷门高分随机推荐
-- 作品搜索、类型 / 地区 / 年代 / 最低评分筛选
-- 热门优先、高分优先、最新加入排序
-- 本地演示注册、登录、退出
-- 作品详情、0–10 分（0.5 刻度）评分
-- 评论发布、评论点赞和按赞数排序
-- 创建作品、编辑自己创建的作品
-- 个人主页、三部最爱作品和三条评论展示
-- 已导入最新版首页台词表 130 条，首页随机展示 3 条
-- 已导入动画名称表 307 个动画条目，并补充 304 个公开封面；作品评分从 0 开始，只统计罗瓣用户自己的评分
-- 筛选支持多条件组合与 0–10 分双端评分范围，个人主页可自行选择最多三部最爱作品和三条展示评论
-- 管理员入口为 `admin / 654321`，可编辑全部作品、管理类型、上传封面和删除作品
-- 界面采用豆瓣式的低饱和目录布局：深灰工具栏、绿色导航、蓝色链接和橙色评分
+[PythonAnywhere 免费档](https://help.pythonanywhere.com/pages/FreeAccountsFeatures/) · [Flask 部署说明](https://help.pythonanywhere.com/pages/Flask/) · [Brevo 免费档](https://help.brevo.com/hc/en-us/articles/208589409-About-Brevo-s-pricing-plans)
 
-当前为纯前端演示，数据写入浏览器 `localStorage`，尚未接入真实后端数据库或第三方登录。
+## 本地运行与其他主机
 
-## 数据来源
+安装 Python 3.12+，在虚拟环境中执行 `pip install -r requirements.txt`。启动前设置以下环境变量。
 
-动画名称来自用户提供的表格；封面通过 [Bangumi API](https://github.com/bangumi/api) 的公开搜索结果按名称匹配，仅使用图片字段，不导入评分、评分人数或条目评论。
+| 变量 | 用途 |
+| --- | --- |
+| PUBLIC_ORIGIN | 完整网站源地址。默认 http://localhost:8000，公网使用 HTTPS。前后端部署在同一源。 |
+| AUTH_SECRET | 服务端随机密钥，至少 32 字符。生成一次并长期保存在主机端。 |
+| DATABASE | SQLite 文件路径。默认 instance/accounts.sqlite3，使用持久存储。 |
+| SMTP_FROM | 服务商验证过的发件地址。 |
+| BREVO_API_KEY | 使用 Brevo HTTPS 发信时配置。 |
+| SMTP_HOST、SMTP_PORT、SMTP_SECURITY | 使用 SMTP 发信时配置。默认 587 和 starttls，也支持 ssl。 |
+| SMTP_USER、SMTP_PASSWORD | SMTP 服务要求的用户名和授权码。 |
+| ADMIN_EMAIL | 可选。仅将管理员身份赋予这个已验证的邮箱。 |
+
+```bash
+gunicorn --bind 127.0.0.1:8000 'server.app:create_app()'
+python -m unittest discover -s tests
+```
+
+Docker 镜像将网站与账号服务一起运行。把仅主机可读的配置放在 .env 中，并为账号库挂载持久卷。在公网为服务配置 HTTPS 反向代理。
+
+```bash
+docker build -t luoban .
+docker run --env-file .env -v luoban-accounts:/app/instance -p 127.0.0.1:8000:8000 luoban
+```
+
+GitHub Pages 和普通静态服务器支持浏览作品。邮箱收信、验证、密码登录、账号管理需要上面的服务端。网站在发送失败时会提示重试，验证码只发往邮箱。
+
+动画名称、台词和导入评分来自原有资料。封面沿用项目内的本地图片。

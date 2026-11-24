@@ -1,0 +1,11 @@
+*
+!requirements.txt
+!server/
+!server/app.py
+!assets/
+!assets/**
+!index.html
+!app.js
+!auth.js
+!styles.css
+**/__pycache__/
