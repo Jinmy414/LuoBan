@@ -72,7 +72,21 @@ const animeChat = (() => {
     const complete = raw.match(/^\s*(?:```(?:json)?\s*)?(\{\s*"(?:(?:recommendations)|(?:reply))"[\s\S]*\})/i);
     const combined = complete ? complete[1] : prefix + raw;
     let parsed;
-    try { parsed = JSON.parse(combined.slice(0, combined.lastIndexOf('}') + 1)); } catch { /* Try again through the UI. */ }
+    try {
+      parsed = JSON.parse(combined.slice(0, combined.lastIndexOf('}') + 1));
+    } catch {
+      // A worker can omit a closing brace. Recover only complete JSON string fields.
+      const pairs = combined.matchAll(/"title"\s*:\s*("(?:[^"\\]|\\.)*")\s*,\s*"reason"\s*:\s*("(?:[^"\\]|\\.)*")/gu);
+      const recommendations = [];
+      for (const pair of pairs) {
+        try { recommendations.push({title:JSON.parse(pair[1]), reason:JSON.parse(pair[2])}); } catch { /* Invalid escape. */ }
+      }
+      const reply = combined.match(/"reply"\s*:\s*("(?:[^"\\]|\\.)*")/u);
+      if (recommendations.length) {
+        parsed = {recommendations};
+        if (reply) try { parsed.reply = JSON.parse(reply[1]); } catch { /* Cards still have complete reasons. */ }
+      }
+    }
     if (!Array.isArray(parsed?.recommendations)) throw new Error('模型的回复不完整，可以重试。');
     const picks = [];
     for (const entry of parsed.recommendations) {
