@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
+from contextlib import closing
 from pathlib import Path
 
 from PIL import Image
@@ -21,7 +22,7 @@ class CommunityTest(unittest.TestCase):
         self.guest = self.app.test_client()
         self.data = dict(id="entry-"+"a"*32, version=0, title="初稿", region="中国", year=2026,
                          types=["原创"], poster="mint", coverImage="", summary="介绍")
-        with sqlite3.connect(path) as conn:
+        with closing(sqlite3.connect(path)) as conn, conn:
             for i in range(1, 4):
                 conn.execute("INSERT INTO accounts VALUES (?,?,?,?,?)", (i, f"user{i}", f"user{i}", f"{i}@example.test", "unused"))
                 conn.execute("INSERT INTO sessions VALUES (?,?,?)", (digest(str(i)), i, 9999999999))
