@@ -34,6 +34,27 @@ class CommunityTest(unittest.TestCase):
     def as_user(self, user):
         self.client.set_cookie(COOKIE, str(user))
 
+    def test_posting_limits_preserve_retries_and_existing_drafts(self):
+        self.as_user(2)
+        key = "animation-6-E7818CE7AFAEE9AB98E6898B"
+        path = "discussion/" + key
+        with closing(sqlite3.connect(self.path)) as conn, conn:
+            for number in range(19):
+                conn.execute("INSERT INTO work_comments VALUES (?,?,2,'short review',unixepoch(),NULL)",
+                             (str(number), key))
+        comment = dict(accountId=2, action="comment", id="a"*36, text="短评")
+        self.assertEqual(self.post(path, **comment).status_code, 200)
+        self.assertEqual(self.post(path, **comment).status_code, 200)
+        self.assertEqual(self.post(path, **{**comment, "id":"b"*36}).status_code, 429)
+        self.as_user(3)
+        self.assertEqual(self.post(path, **{**comment, "accountId":3}).status_code, 200)
+
+        self.as_user(2)
+        for number in range(20):
+            self.assertEqual(self.post("submissions", **{**self.data, "id":f"entry-{number:032x}"}).status_code, 200)
+        self.assertEqual(self.post("submissions", **self.data).status_code, 429)
+        self.assertEqual(self.post("submissions", **{**self.data, "id":"entry-" + "0"*32, "version":1}).status_code, 200)
+
     def test_comment_scores_replies_and_persistent_notices(self):
         self.as_user(2)
         self.post("submissions", **self.data)

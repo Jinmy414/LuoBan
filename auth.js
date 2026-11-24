@@ -76,7 +76,7 @@ function drawAuth() {
   document.getElementById('authBody').innerHTML = `
     ${isLogin ? '' : `<div class="step-track" aria-label="注册第 ${steps.indexOf(step) + 1} 步，共三步">${steps.map((s, i) => `<i class="${i <= steps.indexOf(step) ? 'filled' : ''}"></i>`).join('')}</div>`}
     <h2 id="authTitle">${titles[step]}</h2><p class="auth-description">${hints[step]}</p>
-    <form id="authForm" class="stack-form">${fields[step]}${password}
+    <form method="post" id="authForm" class="stack-form">${fields[step]}${password}
       <p class="form-error" id="authError" role="alert"></p>
       <button class="button button-primary button-wide" type="submit">${actions[step]}</button>
     </form>

@@ -26,6 +26,13 @@ IMPORTED = set("罗硬金文鹏龙飞鲨任虎马")
 SYSTEM_NAMES = {"admin", "jinmy414", "罗瓣社区", "罗瓣管理员", "__proto__", "constructor", "prototype"}
 COOKIE = "luoban_session"
 SESSION_AGE = 14 * 86400
+CONTENT_POLICY = (
+    "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+    "form-action 'self'; script-src 'self'; style-src 'self'; font-src 'self'; "
+    "img-src 'self' https: data: blob:; media-src 'self' https: blob:; "
+    "connect-src 'self' https:; worker-src 'self' blob:; "
+    "frame-src https://player.bilibili.com https://www.youtube.com"
+)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS accounts (
  id INTEGER PRIMARY KEY, username TEXT NOT NULL, name_key TEXT UNIQUE NOT NULL,
@@ -44,6 +51,7 @@ CREATE TABLE IF NOT EXISTS challenges (
 );
 CREATE TABLE IF NOT EXISTS tickets (digest TEXT PRIMARY KEY, email TEXT NOT NULL, expires INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS limits (bucket TEXT PRIMARY KEY, hits INTEGER NOT NULL, expires INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS limits_by_expiry ON limits(expires);
 """
 
 
@@ -115,6 +123,7 @@ def create_app(overrides=None):
     with closing(sqlite3.connect(cfg["DATABASE"], timeout=10)) as initial:
         initial.executescript(SCHEMA + community.SCHEMA + profiles.SCHEMA)
         episodes.install_catalogues(initial, ROOT / "server" / "episode-catalogues.json")
+    dummy_password_hash = generate_password_hash(secrets.token_urlsafe(32))
 
     def db():
         if "db" not in g:
@@ -145,8 +154,13 @@ def create_app(overrides=None):
 
     @app.after_request
     def response_headers(response):
+        response.headers["Content-Security-Policy"] = CONTENT_POLICY
+        response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if secure:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -316,13 +330,22 @@ def create_app(overrides=None):
     @app.post("/api/login")
     def login():
         identity = unicodedata.normalize("NFKC", field("identity").strip()).casefold()
-        if not within_limit("login-ip:" + request.remote_addr, 100, 900) or not within_limit("login:" + identity, 15, 900):
+        if not within_limit("login-ip:" + request.remote_addr, 100, 900):
             return fail("尝试次数过多，请在 15 分钟后再试。", 429)
-        row = db().execute("SELECT * FROM accounts WHERE name_key=? OR email=?", (identity, identity)).fetchone()
-        if not row or not check_password_hash(row["password_hash"], field("password")):
+        lookup = "SELECT * FROM accounts WHERE name_key=? OR email=?"
+        row = db().execute(lookup, (identity, identity)).fetchone()
+        bucket = f"login-account:{row['id']}" if row else "login-name:" + identity
+        if not within_limit(bucket, 15, 900):
+            return fail("尝试次数过多，请在 15 分钟后再试。", 429)
+        password_hash = row["password_hash"] if row else dummy_password_hash
+        if not check_password_hash(password_hash, field("password")) or not row:
             return fail("用户名、邮箱或密码不正确。", 401)
-        with db():
-            return start_session(row)
+        with db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            current = conn.execute(lookup, (identity, identity)).fetchone()
+            if not current or current["id"] != row["id"] or current["password_hash"] != password_hash:
+                return fail("账号信息已更新，请重新登录。", 401)
+            return start_session(current)
 
     @app.get("/api/session")
     def session_info():
@@ -339,28 +362,36 @@ def create_app(overrides=None):
 
     @app.post("/api/account")
     def edit_account():
+        row = active_user()
+        if not row:
+            return fail("请重新登录后再修改账号。", 401)
+        username = unicodedata.normalize("NFKC", field("username").strip())
+        password = field("password")
+        if username != row["username"] or password or "avatar" not in request.json:
+            if not within_limit(f"reauth:{row['id']}", 5, 900):
+                return fail("验证次数过多，请在 15 分钟后再试。", 429)
+            if not check_password_hash(row["password_hash"], field("currentPassword")):
+                return fail("当前密码不正确。", 403)
+        error = check_name(username, row["email"]) if username != row["username"] else None
+        if error or (password and not 8 <= len(password) <= 128):
+            return fail(error or "新密码长度需为 8 至 128 个字符。")
+        avatar = None
+        if "avatar" in request.json:
+            try:
+                avatar = community.image_bytes(request.json["avatar"], avatar=True)
+            except ValueError as exc:
+                return fail(str(exc))
+        new_hash = generate_password_hash(password) if password else row["password_hash"]
         with db() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = active_user()
-            if not row:
+            current = active_user()
+            if not current:
                 return fail("请重新登录后再修改账号。", 401)
-            credentials_changed = field("username").strip() != row["username"] or bool(field("password"))
-            if (credentials_changed or "avatar" not in request.json) and not check_password_hash(row["password_hash"], field("currentPassword")):
-                return fail("当前密码不正确。", 403)
-            username = unicodedata.normalize("NFKC", field("username").strip())
-            error = check_name(username, row["email"]) if username != row["username"] else None
-            password = field("password")
-            if error or (password and not 8 <= len(password) <= 128):
-                return fail(error or "新密码长度需为 8 至 128 个字符。")
-            avatar = None
-            if "avatar" in request.json:
-                try:
-                    avatar = community.image_bytes(request.json["avatar"], avatar=True)
-                except ValueError as exc:
-                    return fail(str(exc))
+            if current["id"] != row["id"] or current["username"] != row["username"] or current["password_hash"] != row["password_hash"]:
+                return fail("账号信息已更新，请刷新后再试。", 409)
             try:
                 updated = conn.execute("UPDATE accounts SET username=?,name_key=?,password_hash=? WHERE id=? RETURNING *",
-                    (username, username.casefold(), generate_password_hash(password) if password else row["password_hash"], row["id"])).fetchone()
+                    (username, username.casefold(), new_hash, row["id"])).fetchone()
             except sqlite3.IntegrityError:
                 return fail("这个用户名已经被使用。", 409)
             if avatar is not None:

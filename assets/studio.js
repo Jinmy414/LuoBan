@@ -12,11 +12,12 @@ function avatarURL(name) {
 function closeStudioDialogs() {
   document.querySelectorAll('.studio-dialog[open]').forEach(dialog => dialog.close());
 }
-function profileComments(username) {
-  const local = state.works.flatMap(work => work.comments.filter(c => c.user === username)
+function profileComments(user) {
+  const username = user.username;
+  const local = state.works.flatMap(work => work.comments.filter(c => c.authorId ? c.authorId === user.accountId : c.user === username)
     .map(comment => ({...comment, work, key: work.id + ':' + comment.id})))
     .sort((a, b) => b.date.localeCompare(a.date));
-  const remote = (getUser(username)?.featuredComments || []).map(c => ({
+  const remote = (user.featuredComments || []).map(c => ({
     ...c, work:getWork(c.workId), key:c.workId + ':' + c.id, likes:0
   })).filter(c => c.work && !local.some(item => item.key === c.key));
   return [...local, ...remote];
@@ -32,7 +33,7 @@ function profileTool(kind, label) {
 function renderProfile() {
   const user = currentUser();
   const favorites = user.favoriteIds.map(getWork).filter(Boolean);
-  const allComments = profileComments(user.username);
+  const allComments = profileComments(user);
   const comments = allComments.filter(item => user.featuredCommentIds.includes(item.key));
   const created = state.works.filter(work => !work.shared && work.createdBy === user.username);
   return `<section class="studio-page">
@@ -73,7 +74,7 @@ function openPicker(kind, opener) {
   const favorites = kind === 'favorites';
   const property = favorites ? 'favoriteIds' : 'featuredCommentIds';
   const choices = favorites ? state.works.map(work => ({id:work.id, label:work.title, info:[displayYear(work.year),work.region].join(' · '), work}))
-    : profileComments(user.username).map(c => ({id:c.key, label:c.work.title, info:c.text, work:c.work}));
+    : profileComments(user).map(c => ({id:c.key, label:c.work.title, info:c.text, work:c.work}));
   const chosen = new Set((user[property] || []).filter(id => choices.some(c => c.id === id)));
   const title = favorites ? '选择最爱' : '选择评论';
   const dialog = openSheet(title, `<div class="picker-tools"><div class="pick-summary"><strong>已选 <span data-count></span> / 3</strong><div class="selected-chips"></div></div>
@@ -163,7 +164,7 @@ async function squareAvatar(file) {
 }
 function openProfileAccount(opener) {
   const user = currentUser();
-  const dialog = openSheet('编辑个人信息', `<form class="account-edit"><div class="sheet-scroll"><div class="avatar-edit"><img src="${avatarURL(user.username)}" alt="头像预览"><label class="studio-action file-label">更换头像<input type="file" accept="image/*" name="avatar"></label></div>
+  const dialog = openSheet('编辑个人信息', `<form method="post" class="account-edit"><div class="sheet-scroll"><div class="avatar-edit"><img src="${avatarURL(user.username)}" alt="头像预览"><label class="studio-action file-label">更换头像<input type="file" accept="image/*" name="avatar"></label></div>
     <label class="studio-field">用户名<input name="username" autocomplete="username" maxlength="20" value="${escapeHTML(user.username)}" required></label>
     <details><summary>修改密码</summary><label class="studio-field">新密码<input name="password" autocomplete="new-password" type="password" minlength="8" maxlength="128"></label></details>
     <label class="studio-field" data-current hidden>当前密码<input name="currentPassword" type="password" autocomplete="current-password"></label>
@@ -217,7 +218,7 @@ function renderEditor(editId = '', submission = null, review = false) {
   const legacy = !!work && !submission && !work.shared;
   const selected = work?.types || ['原创'];
   const options = [...new Set([...selected,...typeOptions()])];
-  const style = submission?.poster || Object.keys(POSTER_OPTIONS).find(key => POSTER_OPTIONS[key] === work?.poster) || 'mint';
+  const style = posterKey(work?.poster);
   const title = review ? '审核作品' : work ? '编辑作品' : '创建作品';
   const action = review ? '通过并发布' : legacy ? '保存修改' : '提交审核';
   const typeChip = type => `<label class="type-choice"><input type="checkbox" name="types" value="${escapeHTML(type)}" ${selected.includes(type) ? 'checked' : ''}><span>${escapeHTML(type)}</span></label>`;
@@ -231,8 +232,8 @@ function renderEditor(editId = '', submission = null, review = false) {
     <fieldset><legend>作品类型 <small>可多选</small></legend><div class="type-choices">${options.slice(0,10).map(typeChip).join('')}</div>${options.length > 10 ? `<details class="more-types" ${selected.length > 10 ? 'open' : ''}><summary>更多类型</summary><div class="type-choices">${options.slice(10).map(typeChip).join('')}</div></details>` : ''}</fieldset>
     ${!legacy || (isAdmin(user) && SEED_WORKS.some(seed => seed.id === work.id)) ? `<label class="studio-field">官方作品页 <small>选填</small><input type="url" name="playbackUrl" value="${escapeHTML(work?.playbackUrl || playbackOverrides[work?.id] || '')}" placeholder="粘贴官方平台的作品网址"><small>供审核时核对作品，支持哔哩哔哩、腾讯视频等平台</small></label>` : ''}
     <label class="studio-field">作品介绍 <small>选填</small><textarea name="summary" maxlength="2400" rows="3" placeholder="用几句话介绍这部作品">${escapeHTML(work?.summary || '')}</textarea></label></section>
-    <section class="studio-panel form-stack"><h2>作品封面</h2><div class="cover-sample"><div class="sample-art" style="background-image:${POSTER_OPTIONS[style]}"><img alt="" ${safeImage(work?.coverImage) ? 'src="' + escapeHTML(work.coverImage) + '"' : 'hidden'}><b>${escapeHTML((work?.title || '作').slice(0,1))}</b></div><div><small>封面预览</small><strong data-sample-title>${escapeHTML(work?.title || '作品名称')}</strong><span data-sample-meta></span></div></div>
-    <fieldset><legend>封面配色</legend><div class="swatches">${Object.entries(posterNames).map(([key,name]) => `<label title="${name}"><input type="radio" name="poster" aria-label="${name}" value="${key}" ${key === style ? 'checked' : ''}><span style="background-image:${POSTER_OPTIONS[key]}"></span></label>`).join('')}</div></fieldset>
+    <section class="studio-panel form-stack"><h2>作品封面</h2><div class="cover-sample"><div class="sample-art" data-poster="${style}"><img alt="" ${safeImage(work?.coverImage) ? 'src="' + escapeHTML(work.coverImage) + '"' : 'hidden'}><b>${escapeHTML((work?.title || '作').slice(0,1))}</b></div><div><small>封面预览</small><strong data-sample-title>${escapeHTML(work?.title || '作品名称')}</strong><span data-sample-meta></span></div></div>
+    <fieldset><legend>封面配色</legend><div class="swatches">${Object.entries(posterNames).map(([key,name]) => `<label title="${name}"><input type="radio" name="poster" aria-label="${name}" value="${key}" ${key === style ? 'checked' : ''}><span data-poster="${key}"></span></label>`).join('')}</div></fieldset>
     <label class="studio-field">图片网址 <small>选填</small><input name="coverImage" inputmode="url" placeholder="https://…" value="${escapeHTML(work?.coverImage?.startsWith('data:') ? '' : work?.coverImage || '')}"></label>
     ${isAdmin(user) ? '<label class="studio-field">上传封面 <small>最大 2 MB</small><input type="file" name="coverFile" accept="image/png,image/jpeg,image/webp,image/gif"></label>' : ''}</section></div>
     ${review ? '<div class="studio-panel review-note"><label class="studio-field">退回原因 <small>退回时必填</small><textarea name="reason" rows="2" maxlength="300" placeholder="告诉作者需要修改什么"></textarea></label></div>' : ''}
@@ -251,7 +252,7 @@ function setupWorkForm(form, original = {}) {
     const title = fields.title.value.trim() || '作品名称';
     form.querySelector('[data-sample-title]').textContent = title;
     form.querySelector('[data-sample-meta]').textContent = [fields.region.value,fields.year.value,...new FormData(form).getAll('types').slice(0,2)].filter(Boolean).join(' · ');
-    sample.style.backgroundImage = POSTER_OPTIONS[fields.poster.value];
+    sample.dataset.poster = posterKey(fields.poster.value);
     sample.querySelector('b').textContent = title.slice(0,1);
     const source = filePreview || safeImage(fields.coverImage.value.trim()) || initialImage;
     if (source && img.getAttribute('src') !== source) { img.hidden = false; img.src = source; }

@@ -72,3 +72,44 @@ class AccountsTest(unittest.TestCase):
         with closing(sqlite3.connect(self.dbfile)) as conn, conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM challenges").fetchone()[0], 0)
         self.assertEqual(self.client.post("/api/logout", json={}, headers={"Origin": "https://other.test"}).status_code, 403)
+
+    def test_browser_policy_and_private_responses(self):
+        for path in ["/", "/api/session", "/missing"]:
+            with self.client.get(path) as response:
+                policy = response.headers["Content-Security-Policy"]
+                for directive in ["script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'"]:
+                    self.assertIn(directive, policy.split("; "))
+                self.assertNotIn("unsafe-inline", policy)
+                self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+                self.assertIn("max-age=", response.headers["Strict-Transport-Security"])
+                if path.startswith("/api/"):
+                    self.assertEqual(response.headers["Cache-Control"], "no-store")
+
+    def test_account_limits_cover_aliases_and_reauthentication(self):
+        challenge, code = self.request_code("reader@example.test")
+        ticket = self.post("verify-email", challenge=challenge, code=code).json["ticket"]
+        self.post("register", ticket=ticket, username="reader", password="reader-password")
+        with patch("server.app.check_password_hash", return_value=False) as check:
+            for i in range(15):
+                identity = "reader" if i % 2 else "reader@example.test"
+                self.assertEqual(self.post("login", identity=identity, password="wrong").status_code, 401)
+            self.assertEqual(self.post("login", identity="READER", password="wrong").status_code, 429)
+            for _ in range(5):
+                self.assertEqual(self.post("account", username="new-reader", currentPassword="wrong").status_code, 403)
+            self.assertEqual(self.post("account", username="new-reader", currentPassword="wrong").status_code, 429)
+            self.assertEqual(check.call_count, 20)
+
+    def test_login_uses_credentials_current_at_session_creation(self):
+        challenge, code = self.request_code("reader@example.test")
+        ticket = self.post("verify-email", challenge=challenge, code=code).json["ticket"]
+        self.post("register", ticket=ticket, username="reader", password="reader-password")
+        self.post("logout")
+
+        def simultaneous_update(*args):
+            with closing(sqlite3.connect(self.dbfile)) as conn, conn:
+                conn.execute("UPDATE accounts SET password_hash='updated-hash' WHERE username='reader'")
+            return True
+
+        with patch("server.app.check_password_hash", side_effect=simultaneous_update):
+            self.assertEqual(self.post("login", identity="reader", password="reader-password").status_code, 401)
+        self.assertIsNone(self.client.get("/api/session").json["user"])

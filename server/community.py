@@ -254,6 +254,11 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
                 return fail("作品状态已更新，请返回列表重新打开。", 409)
             if reviewing and (not row or (action != "delete" and row["status"] != "pending")):
                 return fail("这部作品已处理或不存在。", 409)
+            if not reviewing and (not row or row["status"] != "pending") and not admin(user):
+                pending = conn.execute("SELECT COUNT(*) FROM contributions WHERE author_id=? AND status='pending'",
+                                       (user["id"],)).fetchone()[0]
+                if pending >= 20:
+                    return fail("你有 20 篇待审稿件，请等待审核或编辑现有稿件。", 429)
             if action == "delete":
                 conn.execute("DELETE FROM watch_history WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM episode_progress WHERE work_id=?", (key,))

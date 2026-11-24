@@ -79,7 +79,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .work-cover::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 32%, rgba(0, 0, 0, .58) 100%); }
 .cover-symbol { position: absolute; z-index: 1; top: 10px; left: 10px; color: rgba(255,255,255,.8); font-size: 21px; font-weight: 700; }
 .cover-title { position: relative; z-index: 1; overflow: hidden; font-size: 12px; font-weight: 700; line-height: 1.45; text-overflow: ellipsis; }
-.work-cover.has-image { background-position: center; background-size: cover; }
+.work-cover .cover-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.rating-submit { margin-top: 13px; }
+.comment-submit { display: flex; justify-content: flex-end; }
+.button.related-work { justify-content: space-between; }
+[data-poster="mint"] { --cover: linear-gradient(145deg, #b8d7cc 0%, #4d8d7b 48%, #0f4f47 100%); }
+[data-poster="dusk"] { --cover: linear-gradient(145deg, #f2b28f 0%, #bd6d5d 46%, #5d373a 100%); }
+[data-poster="sky"] { --cover: linear-gradient(145deg, #b7d8df 0%, #6099a4 48%, #28556a 100%); }
+[data-poster="lavender"] { --cover: linear-gradient(145deg, #d8c9dc 0%, #9b789c 50%, #4d405d 100%); }
+[data-poster="lemon"] { --cover: linear-gradient(145deg, #f2e4a9 0%, #b5aa55 48%, #566331 100%); }
+[data-poster="ink"] { --cover: linear-gradient(145deg, #9ab1b2 0%, #4f6869 46%, #1e3036 100%); }
 .work-cover.has-image::after { background: linear-gradient(180deg, transparent 28%, rgba(0,0,0,.63) 100%); }
 .feature-card:hover .work-cover, .work-card:hover .work-cover { box-shadow: 0 3px 9px rgba(0, 0, 0, .16); filter: brightness(1.03); }
 .feature-info { padding-top: 7px; }

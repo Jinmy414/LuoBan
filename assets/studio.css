@@ -87,6 +87,7 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .cover-sample small,.cover-sample span { color: #58685d; font-size: 12px; }
 .cover-sample strong { font-size: 21px; }
 .sample-art { width: 86px; height: 116px; flex: none; overflow: hidden; position: relative; border-radius: 8px; display: grid; place-items: center; box-shadow: 0 5px 10px #263d2d30; }
+.sample-art, .swatches [data-poster] { background-image: var(--cover); }
 .sample-art b { color: white; font-size: 33px; }
 .sample-art img { position: absolute; width: 100%; height: 100%; object-fit: cover; }
 .swatches { gap: 0; }

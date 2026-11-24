@@ -96,7 +96,7 @@ function applyShowcase(user, data) {
 }
 
 function featuredSelection(user, ids) {
-  const comments = new Map(profileComments(user.username).map(c => [c.key, c]));
+  const comments = new Map(profileComments(user).map(c => [c.key, c]));
   return ids.map(id => comments.get(id)).filter(Boolean).map(c => ({id:c.id, workId:c.work.id, text:c.text, score:workCommentScore(c.work,user.username,c.score)}));
 }
 

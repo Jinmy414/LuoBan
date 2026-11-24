@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS comment_notices (
 );
 CREATE INDEX IF NOT EXISTS pending_notices ON comment_notices(recipient,read_at);
 CREATE INDEX IF NOT EXISTS work_comments_by_author ON work_comments(work_id,user_id);
+CREATE INDEX IF NOT EXISTS comments_by_user_time ON work_comments(user_id,posted);
 """
 
 
@@ -101,13 +102,18 @@ def mount(app, db, active_user, admin, fail, now, seed_works):
                 parent = parent_comment(key,parent_id) if parent_id else None
                 if parent_id is not None and not parent:
                     return fail("原评论已移除，请取消回复后重试。", 409)
-                added = conn.execute("INSERT OR IGNORE INTO work_comments VALUES (?,?,?,?,?,?)",
-                                     (comment_id, key, user["id"], body.strip(), now(), parent_id))
-                if not added.rowcount:
-                    previous = conn.execute("SELECT work_id,body,parent_id FROM work_comments WHERE id=?", (comment_id,)).fetchone()
+                previous = conn.execute("SELECT work_id,body,parent_id FROM work_comments WHERE id=?", (comment_id,)).fetchone()
+                if previous:
                     if tuple(previous) != (key, body.strip(), parent_id):
                         return fail("评论内容已变更，请重新提交。", 409)
                 else:
+                    posted = now()
+                    recent = conn.execute("SELECT COUNT(*) FROM work_comments WHERE user_id=? AND posted>?",
+                                          (user["id"], posted - 600)).fetchone()[0]
+                    if recent >= 20:
+                        return fail("每 10 分钟最多发布 20 条短评或回复，请稍后再试。", 429)
+                    conn.execute("INSERT INTO work_comments VALUES (?,?,?,?,?,?)",
+                                 (comment_id, key, user["id"], body.strip(), posted, parent_id))
                     owner = conn.execute("SELECT author_id FROM contributions WHERE id=? AND live IS NOT NULL",
                                          (key,)).fetchone()
                     recipients = {owner[0]: "work"} if owner else {}
