@@ -78,10 +78,10 @@ const animeChat = (() => {
     return selected;
   }
 
-  async function hordePrompt({question, titles, history, query, phase}) {
+  async function hordePrompt({question, titles, history, query, phase, limit}) {
     if (!prompts) prompts = await request('assets/anime-prompts.json?v=1');
     const message = {最近对话:JSON.parse(history), 当前消息:question};
-    if (phase === 'recommend') Object.assign(message, {选片条件:query, 候选片名:titles});
+    if (phase === 'recommend') Object.assign(message, {选片条件:query, 最多几部:limit, 候选片名:titles});
     const input = JSON.stringify(message).replace(/<\|[^\n]*?\|>/g, '').replace(/<\/?think>/gi, '');
     const prefix = phase === 'conversation' ? actionPrefix : pickPrefix;
     return '<|im_start|>system\n' + prompts[phase].join('\n') + '<|im_end|>\n<|im_start|>user\n'
@@ -94,12 +94,12 @@ const animeChat = (() => {
     return combined.slice(0, combined.lastIndexOf('}') + 1);
   }
 
-  function readDecision(generation) {
+  function readDecision(generation, replyOnly) {
     const decision = JSON.parse(jsonText(generation, actionPrefix));
     if (decision?.action === 'reply' && typeof decision.reply === 'string' && decision.reply.trim()) {
       return {reply:decision.reply.trim().slice(0, 600), picks:[], model:modelName(generation)};
     }
-    if (decision?.action === 'search' && typeof decision.query === 'string' && decision.query.trim()) {
+    if (!replyOnly && decision?.action === 'search' && typeof decision.query === 'string' && decision.query.trim()) {
       return {query:decision.query.trim().slice(0, 360)};
     }
     throw new Error('暂时无法理解这条消息，请重试。');
@@ -107,7 +107,7 @@ const animeChat = (() => {
 
   function modelName(generation) { return String(generation.model || '').split('/').pop(); }
 
-  function readAnswer(generation, items) {
+  function readAnswer(generation, items, limit) {
     const combined = jsonText(generation, pickPrefix);
     let parsed;
     try {
@@ -131,9 +131,10 @@ const animeChat = (() => {
       const work = typeof entry?.title === 'string' && items.get(titleKey(entry.title));
       if (!work || !getWork(work.id) || typeof entry.reason !== 'string' || !entry.reason.trim() || picks.some(p => p.id === work.id)) continue;
       picks.push({id:work.id, title:work.title, reason:entry.reason.trim().slice(0, 230)});
-      if (picks.length === 2) break;
+      if (picks.length === limit) break;
     }
-    const reply = typeof parsed.reply === 'string' ? parsed.reply.trim().slice(0, 240) : '';
+    // If the model listed more works than requested, its closing sentence can refer to omitted cards.
+    const reply = typeof parsed.reply === 'string' && parsed.recommendations.length <= limit ? parsed.reply.trim().slice(0, 240) : '';
     if (!picks.length && (parsed.recommendations.some(r => r?.title) || !reply)) throw new Error('这次没有匹配到片库里的作品，可以换个说法或重试。');
     return {picks, reply, model:modelName(generation)};
   }
@@ -214,8 +215,11 @@ const animeChat = (() => {
     try {
       job.llama = (await cloudflareAccess.config()).llama;
       if (pending !== job) return;
-      const history = conversationHistory();
-      const decision = await generate(job, {phase:'conversation', question, history}, readDecision);
+      // A standalone salutation starts a social turn. Previous picks can bias small models into another sales pitch.
+      const greeting = /^(?:你好[吗呀啊]?|您好[吗呀]?|你最近好吗|在吗|早上好|中午好|下午好|晚上好|嗨|哈[啰喽]|hello|hi)[\s!?！？。~～]*$/iu.test(question);
+      const history = greeting ? '[]' : conversationHistory();
+      const decision = await generate(job, {phase:'conversation', question, history},
+        generation => readDecision(generation, greeting));
       if (pending !== job) return;
       let answer = decision;
       if (decision.query) {
@@ -226,8 +230,10 @@ const animeChat = (() => {
           status = '正在片库中挑选作品…';
           paintStatus();
           const titles = [...items.values()].map(work => work.title).join('｜');
-          answer = await generate(job, {phase:'recommend', question, query:decision.query, history, titles},
-            generation => readAnswer(generation, items));
+          const single = /(?:推荐|想看|只[要看选]|换|再来|先看|找|挑|选|给我)(?:上|给我|另外|另|其他的|其中的)?[一1]部|^[一1]部/u.test(question);
+          const limit = single ? 1 : 2;
+          answer = await generate(job, {phase:'recommend', question, query:decision.query, history, titles, limit},
+            generation => readAnswer(generation, items, limit));
           if (pending !== job) return;
         }
       }

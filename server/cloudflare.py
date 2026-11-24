@@ -108,7 +108,10 @@ def install(app, within_limit):
             query = data.get("query", data["question"])
             if not isinstance(query, str) or len(query) > 360 or not data["titles"].strip():
                 return jsonify(error="请检查选片条件后重试。"), 400
-            message.update(选片条件=query, 候选片名=data["titles"])
+            limit = data.get("limit", 2)
+            if type(limit) is not int or limit not in (1, 2):
+                return jsonify(error="单次可推荐一至两部作品。"), 400
+            message.update(选片条件=query, 最多几部=limit, 候选片名=data["titles"])
         if not within_limit(f"ai-{phase}:" + request.remote_addr, 12, 600):
             return jsonify(error="聊天请求过于频繁，请稍后再试。"), 429
         query = json.dumps(message, ensure_ascii=False)
