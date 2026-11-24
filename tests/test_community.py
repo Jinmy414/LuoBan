@@ -40,7 +40,7 @@ class CommunityTest(unittest.TestCase):
         path = "discussion/" + key
         with closing(sqlite3.connect(self.path)) as conn, conn:
             for number in range(19):
-                conn.execute("INSERT INTO work_comments VALUES (?,?,2,'short review',unixepoch(),NULL)",
+                conn.execute("INSERT INTO work_comments VALUES (?,?,2,'short review',strftime('%s','now'),NULL)",
                              (str(number), key))
         comment = dict(accountId=2, action="comment", id="a"*36, text="短评")
         self.assertEqual(self.post(path, **comment).status_code, 200)
