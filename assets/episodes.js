@@ -256,7 +256,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       </button>
       <video hidden controls playsinline preload="none" aria-label="${escapeHTML(work.title)}"></video>
     </div>
-    <div class="episode-player-controls"><label>播放线路<select name="line"></select></label>
+    <div class="episode-player-controls"><label>信号源<select name="line"></select></label>
     <label><span data-pick-label>选集</span><select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
     <div class="episode-feedback" role="status"></div>`;
   const video = room.querySelector('video'),
@@ -266,7 +266,8 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     feedback = room.querySelector('[role=status]');
   const preview = room.querySelector('[data-play-episodes]');
   const playLabel = room.querySelector('[data-play-label]');
-  const labels = [...new Set(catalogue.lines.flatMap(l => l.episodes.map(e => e.label)))];
+  const lines = catalogue.lines.map((line, index) => ({ ...line, displayName: `信号源${index + 1}` }));
+  const labels = [...new Set(lines.flatMap(l => l.episodes.map(e => e.label)))];
   if (labels.every(label => /^第\d+集$/.test(label))) labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
   picker.innerHTML = labels.map((label, i) => `<option value="${i}">${escapeHTML(label)}</option>`).join('');
   const issues = labels.map(label => /^第(\d+)期(?:[上下])?$/.exec(label));
@@ -365,7 +366,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     entry = line.episodes.find((e) => e.label === label) || line.episodes[0];
     resume = seconds;
     const available = choices(entry.label);
-    source.innerHTML = available.map(l => `<option value="${escapeHTML(l.source)}">${escapeHTML(l.name)}</option>`).join('') ||
+    source.innerHTML = available.map(l => `<option value="${escapeHTML(l.source)}">${l.displayName}</option>`).join('') ||
       '<option value="">本集暂不可用</option>';
     if (available.includes(line)) source.value = line.source;
     source.disabled = available.length < 2;
@@ -374,7 +375,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     playLabel.textContent = seconds > 0 ? '续看' + entry.label + ' · ' + episodeTime(seconds) : '播放' + entry.label;
   }
   function choices(label) {
-    return catalogue.lines.filter(l => l.episodes.some(e => e.label === label && !failed.has(e.url)));
+    return lines.filter(l => l.episodes.some(e => e.label === label && !failed.has(e.url)));
   }
   function unavailable(token) {
     if (stopped || generation !== token || attaching) return;
@@ -397,7 +398,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     video.hidden = true;
     preview.hidden = false;
     playLabel.textContent = '重新检测' + entry.label;
-    report('本集线路暂时无法播放，可以重新检测或选择其他集。');
+    report('本集信号源暂时无法播放，可以重新检测或选择其他集。');
   }
   async function start(chosenLine, label, seconds) {
     persist();
@@ -406,11 +407,11 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     select(chosenLine, label, seconds);
     preview.hidden = true;
     video.hidden = false;
-    report('正在连接 ' + line.name + '…');
+    report('正在连接' + line.displayName + '…');
     if (episodeEmbedProviders[line.source]) {
       video.hidden = true;
       frame = document.createElement('iframe');
-      frame.title = work.title + ' · ' + entry.label + ' · ' + line.name + ' 播放器';
+      frame.title = work.title + ' · ' + entry.label + ' · ' + line.displayName + ' 播放器';
       frame.allow = 'autoplay; fullscreen; picture-in-picture';
       frame.allowFullscreen = true;
       frame.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -492,7 +493,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     const selected = available.includes(line) ? line : available[0];
     if (selected) { report(''); choose(selected, label, 0); }
     else {
-      const original = catalogue.lines.find(l => l.episodes.some(e => e.label === label));
+      const original = lines.find(l => l.episodes.some(e => e.label === label));
       persist();
       generation++;
       release();
@@ -500,7 +501,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       video.hidden = true;
       preview.hidden = false;
       playLabel.textContent = '重新检测' + label;
-      report('本集线路暂时无法播放。');
+      report('本集信号源暂时无法播放。');
     }
   }
   const advance = () => {
@@ -512,16 +513,16 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     if (!next.disabled) advance();
   };
   source.onchange = () => {
-    const chosen = catalogue.lines.find((l) => l.source === source.value);
+    const chosen = lines.find((l) => l.source === source.value);
     const match = chosen.episodes.find((e) => e.label === entry.label);
     choose(chosen, match?.label || chosen.episodes[0].label, match ? (Math.floor(video.currentTime) || resume) : 0);
   };
   picker.onchange = () => chooseEpisode(labels[Number(picker.value)]);
   next.onclick = advance;
-  select(catalogue.lines.find((l) => l.source === initialSource) || catalogue.lines[0], initialLabel, initialSeconds || 0);
+  select(lines.find((l) => l.source === initialSource) || lines[0], initialLabel, initialSeconds || 0);
   preview.onclick = () => {
     if (!choices(entry.label).length) {
-      for (const candidate of catalogue.lines) {
+      for (const candidate of lines) {
         const e = candidate.episodes.find(e => e.label === entry.label);
         if (e) failed.delete(e.url);
       }
@@ -558,7 +559,7 @@ async function loadEpisodeAccess(work, target) {
         playEpisodes(work, catalogue, line.source, resume ? progress.label : line.episodes[0].label,
           resume ? progress.seconds : 0, resumeRequested);
       }
-      if (!line) access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的播放线路。</p>');
+      if (!line) access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的信号源。</p>');
       const opener = access.querySelector('[data-import]');
       if (opener)
         opener.onclick = () =>
