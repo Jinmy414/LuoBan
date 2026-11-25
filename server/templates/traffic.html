@@ -46,14 +46,13 @@
           <table><thead><tr><th scope="col">{{ '日期' if week else '时段' }}</th><th scope="col">全部请求</th><th scope="col">首页请求</th><th scope="col">传输量 <small>(MB)</small></th></tr></thead>
           <tbody>{% for label, counts in rows %}
             <tr><th scope="row">{{ label }}</th>
-            {% if counts is not none %}
               <td><div class="traffic-bar"><meter aria-hidden="true" min="0" max="{{ peak }}" value="{{ counts.hits }}"></meter><span>{{ "{:,}".format(counts.hits) }}</span></div></td>
               <td>{{ counts.home }}</td><td>{{ "%.2f"|format(counts.size / 1000000) }}</td>
-            {% else %}<td>—</td><td>—</td><td>—</td>{% endif %}</tr>
+            </tr>
           {% endfor %}</tbody></table>
         </section>
         <p class="traffic-note">图片和接口调用均计入全部请求。首页请求统计成功加载及命中缓存的首页 GET 请求。首页来源 IP 在所选时段内去重，仅供估算访客规模。</p>
-        <p class="traffic-note">按 PythonAnywhere 保留的访问日志汇总。最早记录在 {{ oldest.strftime('%Y-%m-%d %H 时') }}，表中“—”表示没有可用记录或尚未到达该时段。{% if skipped %}有 {{ skipped }} 条日志格式无法识别。{% endif %}</p>
+        <p class="traffic-note">按 PythonAnywhere 保留的访问日志汇总。最早记录在 {{ oldest.strftime('%Y-%m-%d %H 时') }}，表格从首条记录所在时段起列出，统计至查询时刻。{% if skipped %}有 {{ skipped }} 条日志格式无法识别。{% endif %}</p>
       {% endif %}
     {% endif %}
   </main>

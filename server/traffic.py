@@ -160,11 +160,8 @@ def mount(app, active_user, admin):
             if not week:
                 at += timedelta(hours=key)
             until = at + (timedelta(days=1) if week else timedelta(hours=1))
-            if at > now or not oldest or until <= oldest:
-                counts = None
-            else:
-                counts = grouped[key]
-            rows.append((at.strftime("%m-%d" if week else "%H:00"), counts))
-        peak = max((counts.hits for _, counts in rows if counts), default=0)
+            if oldest and at <= now and until > oldest:
+                rows.append((at.strftime("%m-%d" if week else "%H:00"), grouped[key]))
+        peak = max((counts.hits for _, counts in rows), default=0)
         return render_template("traffic.html", **context, totals=totals, rows=rows, peak=max(1, peak),
                                oldest=oldest, skipped=skipped)
