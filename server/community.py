@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from flask import Response, jsonify, request, send_from_directory
 from PIL import Image, ImageOps
 
-from . import discussion, episodes, profiles
+from . import discussion, episodes, profiles, traffic
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS playback_overrides (work_id TEXT PRIMARY KEY, url TEXT NOT NULL);
@@ -116,6 +116,7 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
     def admin(user):
         return bool(user and public_user(user)["role"] in {"admin", "superadmin"})
 
+    traffic.mount(app, active_user, admin)
     public_activity = discussion.mount(app, db, active_user, admin, fail, now, seed_works)
     episodes.mount(app, db, active_user, admin, now, fail, seed_ids)
     profiles.mount(app, db, active_user, fail, imported, seed_ids)

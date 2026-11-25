@@ -52,7 +52,7 @@ def install(app, within_limit):
     def require_visit():
         if not cfg["TURNSTILE_SECRET"] or request.endpoint == "complete_site_entry":
             return None
-        page = request.path in {"/", "/index.html"}
+        page = request.path in {"/", "/index.html", "/admin/traffic"}
         if not page and not request.path.startswith("/api/"):
             return None
         proof = request.cookies.get(cookie)

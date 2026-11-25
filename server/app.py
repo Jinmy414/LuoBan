@@ -165,7 +165,7 @@ def create_app(overrides=None):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         if secure:
             response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.path.startswith("/api/") or request.path in {"/", "/index.html"}:
+        if request.path.startswith("/api/") or request.path in {"/", "/index.html", "/admin/traffic"}:
             response.headers["Cache-Control"] = "no-store"
         return response
 

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>网站流量 · 罗瓣管理后台</title>
+  <link rel="icon" href="/assets/logo-snail.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/traffic.css?v=1">
+</head>
+<body class="traffic">
+  <header><div class="traffic-wrap traffic-brand"><img src="/assets/logo-snail.png" alt="" width="36" height="36"><strong>罗瓣</strong><a href="/#admin">返回管理后台</a></div></header>
+  <main class="traffic-wrap">
+    <h1>网站流量</h1>
+    {% if denied %}
+      <p>请使用管理员或超级管理员账号登录。</p><a class="button button-primary" href="/#admin">前往管理后台</a>
+    {% else %}
+      {% if today is defined %}
+      <form method="get" class="traffic-filters">
+        <nav aria-label="统计时段">
+          <a href="/admin/traffic"{% if not week and end == today %} aria-current="page"{% endif %}>今天</a>
+          <a href="?date={{ yesterday }}"{% if not week and end == yesterday %} aria-current="page"{% endif %}>昨天</a>
+          <a href="?period=week"{% if week %} aria-current="page"{% endif %}>近 7 天</a>
+        </nav>
+        <div class="traffic-date"><label for="traffic-date">按日期</label>
+          <input type="date" id="traffic-date" name="date" value="{{ end }}" max="{{ today }}" required>
+          <button class="button button-ghost" type="submit">查询</button>
+        </div>
+      </form>
+      {% endif %}
+      {% if error %}
+        <p role="alert">{{ error }}</p><a href="/admin/traffic">重新查询今天</a>
+      {% elif oldest is none or end < oldest.date() %}
+        <p role="status">所选时段没有可用的访问日志。</p>
+        {% if oldest %}<p>当前最早的记录在北京时间 {{ oldest.strftime('%Y-%m-%d %H 时') }}。</p>{% endif %}
+      {% else %}
+        <p class="traffic-meta">{{ start }}{% if week %} 至 {{ end }}{% endif %} · 北京时间 · {{ checked }} 查询</p>
+        <dl class="traffic-metrics">
+          <div><dt>全部请求</dt><dd>{{ "{:,}".format(totals.hits) }}<small>次</small></dd></div>
+          <div><dt>首页请求</dt><dd>{{ "{:,}".format(totals.home) }}<small>次</small></dd></div>
+          <div><dt>首页来源 IP</dt><dd>{{ "{:,}".format(totals.home_ips|length) }}<small>个</small></dd></div>
+          <div><dt>响应传输量</dt><dd>{{ "{:,.2f}".format(totals.size / 1000000) }}<small>MB</small></dd></div>
+        </dl>
+        <section class="traffic-detail">
+          <h2>{{ '按日' if week else '分时' }}流量</h2>
+          <table><thead><tr><th scope="col">{{ '日期' if week else '时段' }}</th><th scope="col">全部请求</th><th scope="col">首页请求</th><th scope="col">传输量 <small>(MB)</small></th></tr></thead>
+          <tbody>{% for label, counts in rows %}
+            <tr><th scope="row">{{ label }}</th>
+            {% if counts is not none %}
+              <td><div class="traffic-bar"><meter aria-hidden="true" min="0" max="{{ peak }}" value="{{ counts.hits }}"></meter><span>{{ "{:,}".format(counts.hits) }}</span></div></td>
+              <td>{{ counts.home }}</td><td>{{ "%.2f"|format(counts.size / 1000000) }}</td>
+            {% else %}<td>—</td><td>—</td><td>—</td>{% endif %}</tr>
+          {% endfor %}</tbody></table>
+        </section>
+        <p class="traffic-note">图片和接口调用均计入全部请求。首页请求统计成功加载及命中缓存的首页 GET 请求。首页来源 IP 在所选时段内去重，仅供估算访客规模。</p>
+        <p class="traffic-note">按 PythonAnywhere 保留的访问日志汇总。最早记录在 {{ oldest.strftime('%Y-%m-%d %H 时') }}，表中“—”表示没有可用记录或尚未到达该时段。{% if skipped %}有 {{ skipped }} 条日志格式无法识别。{% endif %}</p>
+      {% endif %}
+    {% endif %}
+  </main>
+</body>
+</html>
