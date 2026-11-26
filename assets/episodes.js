@@ -271,13 +271,29 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   const openEpisode = room.querySelector('[data-open-episode]');
   const lines = catalogue.lines.map((line, index) => ({ ...line, displayName: `信号源${index + 1}` }));
   const labels = [...new Set(lines.flatMap(l => l.episodes.map(e => e.label)))];
-  if (labels.every(label => /^第\d+集$/.test(label))) labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
+  const episodeLabel = /^第(\d+)集([上下])?$/;
+  const numberedEpisodes = labels.every(label => episodeLabel.test(label));
+  if (numberedEpisodes) {
+    const partOrder = label => label.endsWith('上') ? 1 : label.endsWith('下') ? 2 : 0;
+    labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)) || partOrder(a) - partOrder(b));
+  }
   picker.innerHTML = labels.map((label, i) => `<option value="${i}">${escapeHTML(label)}</option>`).join('');
   const issues = labels.map(label => /^第(\d+)期(?:[上下])?$/.exec(label));
+  const collectionCount = labels.filter(label => /合集|合辑/.test(label)).length;
   if (issues.every(Boolean)) {
     room.querySelector('[data-count]').textContent = '共 ' + new Set(issues.map(m => m[1])).size + ' 期';
     room.querySelector('[data-pick-label]').textContent = '选期';
     next.textContent = labels.some(label => /[上下]$/.test(label)) ? '下一段' : '下一期';
+  } else if (numberedEpisodes && labels.some(label => /[上下]$/.test(label))) {
+    const count = new Set(labels.map(label => parseInt(label.slice(1)))).size;
+    room.querySelector('[data-count]').textContent = '已接入 ' + count + ' 集 · ' + labels.length + ' 段';
+    next.textContent = '下一段';
+  } else if (collectionCount) {
+    const episodes = labels.length - collectionCount;
+    const counts = episodes ? [episodes + ' 集', collectionCount + ' 个合集'] : [collectionCount + ' 个合集'];
+    room.querySelector('[data-count]').textContent = '已接入 ' + counts.join(' · ');
+    room.querySelector('[data-pick-label]').textContent = episodes ? '选集或合集' : '选合集';
+    next.textContent = episodes ? '下一条' : '下一个合集';
   } else {
     room.querySelector('[data-count]').textContent = '已接入 ' + labels.length + ' 集';
   }
@@ -399,8 +415,8 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     const following = labels[index + 1];
     next.disabled = !following;
     missingBeforeNext = '';
-    const currentNumber = /^第(\d+)集$/.exec(entry.label);
-    const nextNumber = /^第(\d+)集$/.exec(following || '');
+    const currentNumber = episodeLabel.exec(entry.label);
+    const nextNumber = episodeLabel.exec(following || '');
     if (currentNumber && nextNumber) {
       const first = Number(currentNumber[1]) + 1, last = Number(nextNumber[1]) - 1;
       if (first <= last) missingBeforeNext = (first === last ? '第' + first + '集' : '第' + first + '至' + last + '集') + '暂缺';

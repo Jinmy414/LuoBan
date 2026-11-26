@@ -2090,7 +2090,7 @@ window.LUOBAN_ANIME_SEASONS = [
       },
       {
         "n": 4,
-        "label": "第四季",
+        "label": "宇宙篇（总第86集起）",
         "title": "吞噬星空 宇宙篇",
         "year": 2023,
         "sourceUrl": "https://bgm.tv/subject/424557"
