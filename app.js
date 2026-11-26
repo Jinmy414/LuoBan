@@ -1,7 +1,10 @@
 const STORAGE_KEY = 'luoban-static-v1';
 
-const SERIES_TYPES = ['综艺', '纪录片', '英剧', '美剧'];
-const DEFAULT_TYPE_OPTIONS = ['原创', '动画', ...SERIES_TYPES, '轻改', '漫改', '游戏改', '特摄', '机战', '异世界', '热血', '奇幻', '玄幻', '科幻', '校园', '搞笑', '日常', '恋爱', '百合', '运动', '智斗', '偶像', '职场', '悬疑', '治愈', '冒险', '剧情', '动作', '历史', '推理', '后宫', '音乐', '犯罪'];
+const TYPE_ADDITIONS = [
+  ['综艺', '纪录片', '英剧', '美剧'],
+  ['日剧', '台剧']
+];
+const DEFAULT_TYPE_OPTIONS = ['原创', '动画', ...TYPE_ADDITIONS.flat(), '轻改', '漫改', '游戏改', '特摄', '机战', '异世界', '热血', '奇幻', '玄幻', '科幻', '校园', '搞笑', '日常', '恋爱', '百合', '运动', '智斗', '偶像', '职场', '悬疑', '治愈', '冒险', '剧情', '动作', '历史', '推理', '后宫', '音乐', '犯罪'];
 const IMPORTED_USERNAMES = ['罗', '硬', '金', '文', '鹏', '龙', '飞', '鲨', '任', '虎', '马'];
 const REMOVED_TYPES = new Set(['游戏', '小说']);
 const TEST_USERNAMES = new Set(['demo', 'riko', 'mulberry']);
@@ -32,7 +35,7 @@ const defaultState = {
   users: IMPORTED_USERNAMES.map(username => ({ username, favoriteIds: [], featuredCommentIds: [] })),
   works: SEED_WORKS,
   types: DEFAULT_TYPE_OPTIONS,
-  typeVersion: 1,
+  typeVersion: TYPE_ADDITIONS.length,
   deletedWorkIds: [],
   query: '',
   filters: { types: [], regions: [], years: [], rank: '', scoreMin: 0, scoreMax: 10 },
@@ -73,12 +76,17 @@ function loadState() {
     for (const username of IMPORTED_USERNAMES) {
       if (!users.some(user => user.username === username)) users.push({ username, favoriteIds: [], featuredCommentIds: [] });
     }
-    const types = Array.isArray(saved.types) && saved.types.length ? saved.types.filter(type => type && !REMOVED_TYPES.has(type)) : DEFAULT_TYPE_OPTIONS;
+    let types = Array.isArray(saved.types) && saved.types.length ? saved.types.filter(type => type && !REMOVED_TYPES.has(type)) : DEFAULT_TYPE_OPTIONS;
+    const additions = TYPE_ADDITIONS.slice(saved.typeVersion || 0).flat();
+    if (additions.length) {
+      const available = new Set([...types, ...additions]);
+      types = [...DEFAULT_TYPE_OPTIONS.filter(type => available.has(type)), ...types.filter(type => !DEFAULT_TYPE_OPTIONS.includes(type))];
+    }
     return {
       ...structuredClone(defaultState),
       query: saved.query || '',
       sort: saved.sort || 'hot',
-      types: [...new Set(saved.typeVersion >= 1 ? types : [...types, ...SERIES_TYPES])],
+      types: [...new Set(types)],
       deletedWorkIds: [...deletedWorkIds],
       filters: { ...defaultState.filters, ...(saved.filters || {}), scoreMin: saved.filters?.scoreMin ?? saved.filters?.score ?? 0, scoreMax: saved.filters?.scoreMax ?? 10 },
       users,
