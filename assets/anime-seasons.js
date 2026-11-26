@@ -526,6 +526,7 @@ window.LUOBAN_ANIME_SEASONS = [
   },
   {
     "rootId": "animation-33-E68890E9BE99E58E86E999A9E8AEB0",
+    "combined": true,
     "year": 2000,
     "sourceUrl": "https://www.tvmaze.com/seasons/17140/jackie-chan-adventures-season-1",
     "seasons": [

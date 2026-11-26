@@ -259,7 +259,8 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     </div>
     <div class="episode-player-controls"><label>信号源<select name="line"></select></label>
     <label><span data-pick-label>选集</span><select name="episode"></select></label><button type="button" class="studio-action" data-next>下一集</button></div>
-    <div class="episode-feedback" role="status"></div>`;
+    <div class="episode-feedback" role="status"></div>
+    <a class="text-link" data-open-episode hidden target="_blank" rel="noopener noreferrer"></a>`;
   const video = room.querySelector('video'),
     source = room.querySelector('[name=line]'),
     picker = room.querySelector('[name=episode]');
@@ -267,6 +268,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     feedback = room.querySelector('[role=status]');
   const preview = room.querySelector('[data-play-episodes]');
   const playLabel = room.querySelector('[data-play-label]');
+  const openEpisode = room.querySelector('[data-open-episode]');
   const lines = catalogue.lines.map((line, index) => ({ ...line, displayName: `信号源${index + 1}` }));
   const labels = [...new Set(lines.flatMap(l => l.episodes.map(e => e.label)))];
   if (labels.every(label => /^第\d+集$/.test(label))) labels.sort((a,b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
@@ -277,8 +279,10 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     room.querySelector('[data-pick-label]').textContent = '选期';
     next.textContent = labels.some(label => /[上下]$/.test(label)) ? '下一段' : '下一期';
   } else {
-    room.querySelector('[data-count]').textContent = '共 ' + labels.length + ' 集';
+    room.querySelector('[data-count]').textContent = '已接入 ' + labels.length + ' 集';
   }
+  const nextLabel = next.textContent;
+  let missingBeforeNext = '';
   const failed = new Set();
   let frame, loadTimer;
   let line,
@@ -365,14 +369,43 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   function select(chosenLine, label, seconds) {
     line = chosenLine;
     entry = line.episodes.find((e) => e.label === label) || line.episodes[0];
+    openEpisode.hidden = true;
+    openEpisode.removeAttribute('href');
+    if (episodeEmbedProviders[line.source]) {
+      const url = new URL(entry.url);
+      if (line.source === 'youtube') {
+        const watch = new URL('https://www.youtube.com/watch');
+        watch.searchParams.set('v', url.pathname.split('/').pop());
+        if (url.searchParams.has('start')) watch.searchParams.set('t', url.searchParams.get('start') + 's');
+        openEpisode.href = watch.href;
+      } else if (line.source === 'bilibili') {
+        const episode = url.searchParams.get('episodeId');
+        openEpisode.href = episode ? 'https://www.bilibili.com/bangumi/play/ep' + episode
+          : 'https://www.bilibili.com/video/' + url.searchParams.get('bvid') + '/?p=' + url.searchParams.get('p');
+      }
+      if (openEpisode.hasAttribute('href')) {
+        openEpisode.textContent = '在' + line.name + '打开本集 ↗';
+        openEpisode.hidden = false;
+      }
+    }
     resume = seconds;
     const available = choices(entry.label);
     source.innerHTML = available.map(l => `<option value="${escapeHTML(l.source)}">${l.displayName}</option>`).join('') ||
       '<option value="">本集暂不可用</option>';
     if (available.includes(line)) source.value = line.source;
     source.disabled = available.length < 2;
-    picker.value = String(labels.indexOf(entry.label));
-    next.disabled = Number(picker.value) >= labels.length - 1;
+    const index = labels.indexOf(entry.label);
+    picker.value = String(index);
+    const following = labels[index + 1];
+    next.disabled = !following;
+    missingBeforeNext = '';
+    const currentNumber = /^第(\d+)集$/.exec(entry.label);
+    const nextNumber = /^第(\d+)集$/.exec(following || '');
+    if (currentNumber && nextNumber) {
+      const first = Number(currentNumber[1]) + 1, last = Number(nextNumber[1]) - 1;
+      if (first <= last) missingBeforeNext = (first === last ? '第' + first + '集' : '第' + first + '至' + last + '集') + '暂缺';
+    }
+    next.textContent = missingBeforeNext ? missingBeforeNext + '，跳至' + following : nextLabel;
     playLabel.textContent = seconds > 0 ? '续看' + entry.label + ' · ' + episodeTime(seconds) : '播放' + entry.label;
   }
   function choices(label) {
@@ -401,6 +434,18 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     playLabel.textContent = '重新检测' + entry.label;
     report('本集信号源暂时无法播放，可以重新检测或选择其他集。');
   }
+  function rememberEmbeddedEpisode() {
+    if (!accountId) return;
+    const token = generation;
+    const data = { accountId, source: line.source, revision: line.revision, label: entry.label, seconds: 0 };
+    progressWrites = progressWrites.then(() => {
+      if (activeAccount?.id === accountId) return accountRequest('episode-progress/' + encodeURIComponent(work.id), data);
+    }).catch(() => { if (generation === token) report('本集观看记录未同步。'); });
+  }
+  openEpisode.onclick = rememberEmbeddedEpisode;
+  openEpisode.addEventListener('auxclick', event => {
+    if (event.button === 1) rememberEmbeddedEpisode();
+  });
   async function start(chosenLine, label, seconds) {
     persist();
     const token = ++generation;
@@ -421,12 +466,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       frame.src = embedUrl.href;
       room.querySelector('.episode-stage').append(frame);
       frame.onload = () => { if (generation === token) report(''); };
-      if (accountId) {
-        const data = { accountId, source: line.source, revision: line.revision, label: entry.label, seconds: 0 };
-        progressWrites = progressWrites.then(() => {
-          if (activeAccount?.id === accountId) return accountRequest('episode-progress/' + encodeURIComponent(work.id), data);
-        }).catch(() => { if (generation === token) report('本集观看记录未同步。'); });
-      }
+      rememberEmbeddedEpisode();
       return;
     }
     try {
@@ -511,7 +551,8 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   };
   video.onended = () => {
     persist();
-    if (!next.disabled) advance();
+    if (missingBeforeNext) report(missingBeforeNext + '，可手动选择后续集数。');
+    else if (!next.disabled) advance();
   };
   source.onchange = () => {
     const chosen = lines.find((l) => l.source === source.value);
