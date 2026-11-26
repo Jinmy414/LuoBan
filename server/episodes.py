@@ -34,7 +34,7 @@ SOURCES = {
     "custom": ("自定义片源", ""),
 }
 EMBED_URLS = {
-    "bilibili": re.compile(r"https://player\.bilibili\.com/player\.html\?bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}"),
+    "bilibili": re.compile(r"https://player\.bilibili\.com/player\.html\?(?:bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}|episodeId=[1-9]\d{0,11})"),
     "youtube": re.compile(r"https://www\.youtube\.com/embed/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?"),
 }
 HISTORY_MARKER = "luoban:episodes"
@@ -168,7 +168,7 @@ def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
             progress = db().execute("SELECT source,label,seconds FROM episode_progress WHERE user_id=? AND work_id=?",
                                     (user["id"], key)).fetchone() if user else None
             payload = dict(lines=lines, progress=dict(progress) if progress else None,
-                           officialLinks=official_links.get(key, []))
+                           officialLinks=official_links(key))
             if admin(user):
                 payload["providers"] = [dict(id=k, name=v[0], host=v[1]) for k,v in SOURCES.items()]
             return jsonify(payload)

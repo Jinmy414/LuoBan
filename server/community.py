@@ -177,9 +177,17 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
     def admin(user):
         return bool(user and public_user(user)["role"] in {"admin", "superadmin"})
 
+    def official_links(key):
+        if WORK_ID.fullmatch(key):
+            row = db().execute("SELECT json_extract(live,'$.playbackUrl') FROM contributions WHERE id=?", (key,)).fetchone()
+            url = row[0] if row else None
+            platform = playback_platform(url)
+            return [{"platform": platform, "url": url}] if platform else []
+        return season_links.get(key, [])
+
     traffic.mount(app, active_user, admin)
     public_activity = discussion.mount(app, db, active_user, admin, fail, now, seed_works)
-    episodes.mount(app, db, active_user, admin, now, fail, seed_ids | season_ids, season_links)
+    episodes.mount(app, db, active_user, admin, now, fail, seed_ids | season_ids, official_links)
     profiles.mount(app, db, active_user, fail, imported, seed_ids)
 
     def entry(row, public=False):

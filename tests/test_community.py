@@ -77,17 +77,23 @@ class CommunityTest(unittest.TestCase):
         self.assertTrue(draft["requestOnly"])
         self.assertIsNone(draft["year"])
         self.assertEqual(draft["requestNote"], "仅审核可见")
-        approve = {**draft, "action":"approve", "summary":"公开简介"}
+        official_url = "https://www.iqiyi.com/a_series.html"
+        approve = {**draft, "action":"approve", "summary":"公开简介", "playbackUrl":official_url}
+        episode_path = "/api/episodes/" + wish["id"]
+        self.assertEqual(self.guest.get(episode_path).status_code, 404)
         for title in ("新剧第二季", "黄石 第一季"):
             self.assertEqual(self.post("reviews", **{**approve, "title":title}).status_code, 409)
         self.assertEqual(self.post("reviews", **approve).status_code, 200)
         published, = self.guest.get("/api/works").json["works"]
         self.assertNotIn("requestNote", published)
         self.assertEqual(published["summary"], "公开简介")
+        links = [{"platform": "爱奇艺", "url": official_url}]
+        self.assertEqual(self.guest.get(episode_path).json["officialLinks"], links)
         self.assertFalse(self.client.get("/api/submissions/" + wish["id"]).json["item"]["requestOnly"])
         self.as_user(2)
         edit = {**self.data, "title":"新片名", "version":2}
         self.assertEqual(self.post("submissions", **edit).status_code, 200)
+        self.assertEqual(self.guest.get(episode_path).json["officialLinks"], links)
         fresh = {**wish, "id":"entry-" + "c"*32}
         self.assertEqual(self.post("submissions", **fresh).json["workId"], wish["id"])
         self.assertEqual(self.post("submissions", **{**fresh, "title":"新片名"}).status_code, 409)
@@ -322,6 +328,13 @@ class CommunityTest(unittest.TestCase):
         self.assertIn("start=699", validated_catalogue(data, "youtube")[1])
         with self.assertRaises(ValueError):
             validated_catalogue(data, "bilibili")
+        episode = "https://player.bilibili.com/player.html?episodeId=82733"
+        data["episodes"][0]["url"] = episode
+        self.assertIn(episode, validated_catalogue(data, "bilibili")[1])
+        for invalid in (episode + "&p=2", episode.replace("82733", "0"), episode.replace("player.bilibili.com", "example.org")):
+            data["episodes"][0]["url"] = invalid
+            with self.assertRaises(ValueError):
+                validated_catalogue(data, "bilibili")
         for invalid in (url + "?start=699&end=7", url + "?list=other", url.replace("www.youtube.com", "example.org")):
             data["episodes"][0]["url"] = invalid
             with self.assertRaises(ValueError):

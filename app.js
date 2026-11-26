@@ -115,12 +115,16 @@ function mergeSeedWork(seed, saved, originalYear) {
   const savedComments = Array.isArray(saved.comments) ? saved.comments : [];
   const comments = [...seedComments, ...savedComments.filter(comment => !seedComments.some(item => item.id === comment.id))];
   const savedCover = String(saved.coverImage || '');
-  const migratedCover = /^https?:\/\/lain\.bgm\.tv\//i.test(savedCover) && String(seed.coverImage || '').startsWith('assets/covers/') ? seed.coverImage : (saved.coverImage || seed.coverImage);
+  const seedCover = String(seed.coverImage || '');
+  const useSeedCover = seedCover.startsWith('assets/covers/') && (
+    /^https?:\/\/lain\.bgm\.tv\//i.test(savedCover) ||
+    (seedCover.includes('?v=') && savedCover.split('?')[0] === seedCover.split('?')[0])
+  );
   return normalizeWork({
     ...seed,
     ...saved,
     year: saved.year === originalYear ? seed.year : saved.year ?? seed.year,
-    coverImage: migratedCover,
+    coverImage: useSeedCover ? seedCover : (saved.coverImage || seed.coverImage),
     poster: saved.poster || seed.poster,
     userRatings,
     comments

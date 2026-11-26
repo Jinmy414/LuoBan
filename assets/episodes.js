@@ -24,7 +24,7 @@ function episodeTime(seconds) {
 }
 
 const episodeEmbedProviders = {
-  bilibili: { pattern: /^https:\/\/player\.bilibili\.com\/player\.html\?bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}$/, example: 'https://player.bilibili.com/player.html?bvid=BV…&p=1' },
+  bilibili: { pattern: /^https:\/\/player\.bilibili\.com\/player\.html\?(?:bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}|episodeId=[1-9]\d{0,11})$/, example: 'https://player.bilibili.com/player.html?episodeId=…' },
   youtube: { pattern: /^https:\/\/www\.youtube\.com\/embed\/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?$/, example: 'https://www.youtube.com/embed/视频ID' }
 };
 
@@ -571,7 +571,7 @@ async function loadEpisodeAccess(work, target) {
         const platforms = `<p>可观看地区和会员要求以平台页面为准。</p><div class="detail-actions">${buttons.slice(0, visibleCount).join('')}</div>${more}`;
         access.insertAdjacentHTML('afterbegin', line
           ? `<details><summary>官方播放平台（${links.length}）</summary>${platforms}</details>`
-          : `<section><h2>官方播放平台</h2>${platforms}</section>`);
+          : `<section><h2>前往官方平台观看</h2><p>本站暂无可播放的分集。</p>${platforms}</section>`);
       } else if (!line) {
         access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的信号源。</p>');
       }
