@@ -4,6 +4,7 @@ import binascii
 import io
 import json
 import re
+import unicodedata
 from urllib.parse import urlsplit
 
 from flask import Response, jsonify, request, send_from_directory
@@ -72,7 +73,28 @@ def image_bytes(source, *, avatar=False):
         raise ValueError("无法读取这张图片，请重新选择。") from exc
 
 
-def work_fields(data, admin, previous):
+def title_key(title):
+    text = unicodedata.normalize("NFKC", title).casefold()
+    text = "".join(c for c in text if not c.isspace() and unicodedata.category(c) != "Cf")
+    if text.startswith("《") and text.endswith("》"):
+        text = text[1:-1]
+    digits = "零一二三四五六七八九"
+
+    def season(match):
+        number = match[1]
+        if number.isdecimal():
+            value = int(number)
+        elif "十" in number:
+            tens, units = number.split("十")
+            value = (digits.index(tens) if tens else 1) * 10 + (digits.index(units) if units else 0)
+        else:
+            value = digits.index(number)
+        return f"第{value}季"
+
+    return re.sub(r"第(\d+|[一二三四五六七八九]?十[一二三四五六七八九]?|[零一二三四五六七八九])季", season, text)
+
+
+def work_fields(data, admin, previous, *, allow_unknown_year=False):
     def string(key, limit):
         value = data.get(key, "")
         if not isinstance(value, str) or len(value.strip()) > limit:
@@ -82,8 +104,10 @@ def work_fields(data, admin, previous):
     title, summary = string("title", 120), string("summary", 2400)
     region, year = data.get("region"), data.get("year")
     types, poster = data.get("types"), data.get("poster")
-    if not title or region not in ("中国", "日本", "欧美", "其他") or type(year) is not int or not 1900 <= year <= 2100:
-        raise ValueError("请检查名称、地区和年份。")
+    if not title_key(title) or region not in ("中国", "日本", "欧美", "其他"):
+        raise ValueError("请填写作品名称并选择地区。")
+    if not (allow_unknown_year and year is None) and (type(year) is not int or not 1900 <= year <= 2100):
+        raise ValueError("请填写 1900 到 2100 之间的年份。")
     if not isinstance(types, list) or not 1 <= len(types) <= 50 or any(
             not isinstance(t, str) or not re.fullmatch(r"[\w ·-]{1,24}", t) for t in types):
         raise ValueError("请选择有效的作品类型。")
@@ -112,6 +136,27 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
         content = (root / "assets" / filename).read_text()
         seed_works.extend(json.loads(content.partition(" = ")[2].strip().rstrip(";")))
     seed_ids = {work["id"] for work in seed_works}
+    seed_titles = {title_key(work["title"]): work["id"] for work in seed_works}
+
+    def duplicate_title(conn, title, current_id):
+        normalized = title_key(title)
+        public_id = seed_titles.get(normalized)
+        pending = False
+        if not public_id:
+            for item in conn.execute("""
+                    SELECT id, json_extract(live,'$.title') AS published_title,
+                        CASE WHEN status='pending' THEN json_extract(draft,'$.title') END AS pending_title
+                    FROM contributions WHERE id!=? AND (live IS NOT NULL OR status='pending')""", (current_id,)):
+                if item["published_title"] and title_key(item["published_title"]) == normalized:
+                    public_id = item["id"]
+                    break
+                if item["pending_title"] and title_key(item["pending_title"]) == normalized:
+                    pending = True
+        if public_id:
+            return jsonify(error="这部作品已经上线。", workId=public_id), 409
+        if pending:
+            return fail("这部作品正在审核中，无需重复提交。", 409)
+        return None
 
     def admin(user):
         return bool(user and public_user(user)["role"] in {"admin", "superadmin"})
@@ -128,6 +173,7 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
         item = dict(fields, id=row["id"], createdBy=row["username"], authorId=row["author_id"], version=row["version"])
         if not public:
             item.update(status=row["status"], reason=row["reason"])
+            item["requestOnly"] = "requestNote" in fields and row["live"] is None
         return item
 
     base = "SELECT c.*, a.username FROM contributions c JOIN accounts a ON a.id=c.author_id "
@@ -270,22 +316,37 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
                 conn.execute("DELETE FROM contributions WHERE id=?", (key,))
                 return jsonify(ok=True)
             previous = json.loads(row["draft"]) if row else {}
+            note = previous.get("requestNote")
+            wish = not reviewing and data.get("action") == "request"
+            if wish:
+                if row and (row["live"] or note is None):
+                    return fail("请在作品资料页修改这部作品。", 409)
+                note = data.get("requestNote", "")
+                if not isinstance(note, str) or len(note.strip()) > 500:
+                    return fail("留言最多 500 字。")
+                note = note.strip()
+                data = {"poster": "mint", **previous, **{k: data.get(k) for k in ("title", "region", "types")}}
             if row and row["live"] and isinstance(data.get("coverImage"), str) and data.get("coverImage", "").startswith(f"/api/works/{key}/cover?"):
                 data = {**data, "coverImage": json.loads(row["live"])["coverImage"]}
             try:
-                fields = work_fields(data, admin(user), previous)
+                fields = work_fields(data, admin(user), previous, allow_unknown_year=note is not None)
             except ValueError as exc:
                 return fail(str(exc))
+            if action != "reject":
+                duplicate = duplicate_title(conn, fields["title"], key)
+                if duplicate:
+                    return duplicate
             reason = data.get("reason", "")
             if action == "reject" and (not isinstance(reason, str) or not 1 <= len(reason.strip()) <= 300):
                 return fail("请填写退回原因，最多 300 字。")
             content = json.dumps(fields, ensure_ascii=False)
+            draft = content if note is None else json.dumps({**fields, "requestNote": note}, ensure_ascii=False)
             status = {"approve": "approved", "reject": "rejected"}.get(action, "pending")
             if row:
                 conn.execute("""UPDATE contributions SET draft=?, live=CASE WHEN ?='approved' THEN ? ELSE live END,
                                 status=?, reason=?, version=version+1, updated=? WHERE id=?""",
-                             (content, status, content, status, reason.strip() if action == "reject" else "", now(), key))
+                             (draft, status, content, status, reason.strip() if action == "reject" else "", now(), key))
             else:
                 conn.execute("""INSERT INTO contributions(id,author_id,draft,status,version,updated)
-                                VALUES (?,?,?,'pending',1,?)""", (key, user["id"], content, now()))
+                                VALUES (?,?,?,'pending',1,?)""", (key, user["id"], draft, now()))
         return jsonify(id=key, status=status, version=version+1)

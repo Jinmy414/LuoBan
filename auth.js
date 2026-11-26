@@ -24,6 +24,7 @@ async function accountRequest(path, data) {
     if (result.code === 'SITE_ENTRY_REQUIRED') location.reload();
     const error = new Error(result.error || '请求失败，请稍后再试。');
     error.status = response.status;
+    if (typeof result.workId === 'string') error.workId = result.workId;
     throw error;
   }
   return result;

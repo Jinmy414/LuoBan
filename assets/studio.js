@@ -44,8 +44,8 @@ function renderProfile() {
     <div class="favorite-shelf">${favorites.map(work => workCard(work, true)).join('')}${favorites.length < 3 ? '<button class="favorite-slot" type="button" data-profile-tool="favorites"><span aria-hidden="true">♡</span>添加最爱作品</button>' : ''}</div></section>
     <section class="studio-panel"><div class="panel-heading"><h2>观看记录</h2><small>仅自己可见</small></div><div id="watchHistory">正在读取…</div></section>
     <div class="profile-columns"><section class="studio-panel"><div class="panel-heading"><h2>展示评论</h2>${profileTool('comments','选择评论')}</div>${comments.map(c => `<article class="profile-quote">${commentScoreBadge(c.work,user.username,c.score)}<p>${escapeHTML(c.text)}</p><a href="#work-${escapeHTML(c.work.id)}">《${escapeHTML(c.work.title)}》</a></article>`).join('') || '<p class="studio-empty">还没有展示评论。</p>'}</section>
-    <section class="studio-panel"><div class="panel-heading"><h2>创建的作品</h2><a class="studio-action" href="#create">创建作品</a></div>
-    <div id="mySubmissions" aria-live="polite">正在读取投稿…</div>
+    <section class="studio-panel"><div class="panel-heading"><h2>我的上线申请</h2><a class="studio-action" href="#create">期待上线</a></div>
+    <div id="mySubmissions" aria-live="polite">正在读取申请…</div>
     ${created.map(w => `<a class="studio-row" href="#work-${escapeHTML(w.id)}">${thumb(w)}<span>${escapeHTML(w.title)}</span><small>${displayYear(w.year)}</small></a>`).join('')}</section></div></section>`;
 }
 function openSheet(title, content, opener) {
@@ -209,27 +209,96 @@ function openProfileAccount(opener) {
     }
   }, {once:true});
 }
+function workTypeChoices(selected) {
+  const options = [...new Set([...selected, ...typeOptions()])];
+  const typeChip = type => `<label class="type-choice"><input type="checkbox" name="types" value="${escapeHTML(type)}" ${selected.includes(type) ? 'checked' : ''}><span>${escapeHTML(type)}</span></label>`;
+  return `<fieldset><legend>类别 <small>可多选</small></legend><div class="type-choices">${options.slice(0,10).map(typeChip).join('')}</div>${options.length > 10 ? `<details class="more-types" ${selected.length > 10 ? 'open' : ''}><summary>更多类型</summary><div class="type-choices">${options.slice(10).map(typeChip).join('')}</div></details>` : ''}</fieldset>`;
+}
+function renderWorkRequest(item = {}) {
+  if (!currentUser()) return loginRequired('期待上线', '登录后，告诉管理员你想在罗瓣看到哪部作品。');
+  const id = item.id || 'entry-' + crypto.randomUUID().replaceAll('-', '');
+  return `<section class="studio-page work-request"><header class="studio-intro"><h1>期待上线</h1><p>想在罗瓣看到哪部作品？给管理员留个言。</p></header>
+    <form id="requestForm" class="studio-panel form-stack" data-id="${escapeHTML(id)}" data-version="${item.version || 0}">
+    ${item.reason ? `<p class="request-return">退回原因 · ${escapeHTML(item.reason)}</p>` : ''}
+    <label class="studio-field">作品名称<input name="title" required maxlength="120" value="${escapeHTML(item.title || '')}" placeholder="填写片名，剧集请注明第几季"></label>
+    <p class="title-match" role="status" aria-live="polite"></p>
+    <label class="studio-field">地区<select name="region" required><option value="">选择地区</option>${REGION_OPTIONS.map(r => `<option ${item.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
+    ${workTypeChoices(item.types || [])}
+    <label class="studio-field"><span>给管理员的留言 <small>选填</small></span><textarea name="requestNote" rows="3" maxlength="500" placeholder="可以补充别名、版本或想看的原因">${escapeHTML(item.requestNote || '')}</textarea></label>
+    <p class="request-privacy">只有你、管理员和超级管理员可以查看留言。</p>
+    <p class="form-error" role="alert"></p><div class="editor-foot"><a class="studio-action" href="#profile">我的申请</a><button class="button button-primary" type="submit">提交审核</button></div></form></section>`;
+}
+
+function matchingWork(title, exceptId) {
+  const normalize = text => text.normalize('NFKC').toLowerCase().replace(/[\s\p{Cf}]/gu, '').replace(/^《(.*)》$/u, '$1');
+  const key = normalize(title);
+  return key && state.works.find(work => work.id !== exceptId && normalize(work.title) === key);
+}
+
+function workMessage(target, message, id) {
+  target.textContent = message;
+  if (id) {
+    const link = document.createElement('a');
+    link.href = '#work-' + encodeURIComponent(id);
+    link.textContent = '查看作品 ›';
+    target.append(' ', link);
+  }
+}
+
+function setupRequestForm(form) {
+  const fields = form.elements;
+  const hint = form.querySelector('.title-match');
+  const error = form.querySelector('[role=alert]');
+  const button = form.querySelector('[type=submit]');
+  function updateMatch() {
+    const work = matchingWork(fields.title.value, form.dataset.id);
+    workMessage(hint, work ? '罗瓣已收录这部作品。' : '', work?.id);
+  }
+  updateMatch();
+  fields.title.addEventListener('input', updateMatch);
+  form.addEventListener('input', () => { error.textContent = ''; });
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (button.disabled) return;
+    const types = new FormData(form).getAll('types');
+    if (!types.length) {
+      error.textContent = '请至少选择一种类别。';
+      form.querySelector('[name=types]').focus();
+      return;
+    }
+    button.disabled = true;
+    button.textContent = '正在提交…';
+    try {
+      await accountRequest('submissions', {
+        action:'request', id:form.dataset.id, version:Number(form.dataset.version),
+        title:fields.title.value.trim(), region:fields.region.value, types, requestNote:fields.requestNote.value.trim()
+      });
+      if (form.isConnected) { navigate('profile'); showToast('已提交，可在「我的上线申请」查看进度'); }
+    } catch (exception) {
+      workMessage(error, exception.message, exception.workId);
+    } finally { button.disabled = false; button.textContent = '提交审核'; }
+  });
+}
+
 function renderEditor(editId = '', submission = null, review = false) {
   const user = currentUser();
-  if (!user) return loginRequired('登录后创建作品', '提交作品后，可以在我的罗瓣查看审核进度。');
+  if (!user) return loginRequired('登录后编辑作品', '提交作品后，可以在我的罗瓣查看审核进度。');
   const work = submission || (editId && getWork(editId));
   if (editId && !work) return '<p class="studio-empty">找不到这部作品。</p>';
   if (work && work.createdBy !== user.username && !isAdmin(user)) return '<p class="studio-empty">只有创建者和管理员可以修改这部作品。</p>';
   const legacy = !!work && !submission && !work.shared;
-  const selected = work?.types || ['原创'];
-  const options = [...new Set([...selected,...typeOptions()])];
   const style = posterKey(work?.poster);
   const title = review ? '审核作品' : work ? '编辑作品' : '创建作品';
   const action = review ? '通过并发布' : legacy ? '保存修改' : '提交审核';
-  const typeChip = type => `<label class="type-choice"><input type="checkbox" name="types" value="${escapeHTML(type)}" ${selected.includes(type) ? 'checked' : ''}><span>${escapeHTML(type)}</span></label>`;
   const id = work?.id || 'entry-' + crypto.randomUUID().replaceAll('-','');
   return `<section class="studio-page"><header class="studio-intro"><h1>${title}</h1><p>${review ? '由 ' + escapeHTML(work.createdBy) + ' 提交。可直接修改下方内容，再决定是否发布。' : legacy ? '更新这部作品的资料。' : '管理员审核通过后，作品会出现在发现页。'}</p></header>
     <form id="workForm" data-id="${escapeHTML(id)}" data-version="${work?.version || 0}" data-mode="${review ? 'review' : legacy ? 'legacy' : 'submit'}">
+    ${review && work.requestNote ? `<section class="studio-panel request-message"><h2>申请人留言</h2><p>${escapeHTML(work.requestNote)}</p></section>` : ''}
     <div class="studio-editor"><section class="studio-panel form-stack"><h2>作品资料</h2>
     <label class="studio-field">作品名称<input name="title" required maxlength="120" value="${escapeHTML(work?.title || '')}" placeholder="输入作品名称"></label>
     <div class="field-pair"><label class="studio-field">地区<select name="region">${REGION_OPTIONS.map(r => `<option ${work?.region === r ? 'selected' : ''}>${r}</option>`).join('')}</select></label>
-    <label class="studio-field">年份<input type="number" name="year" min="1900" max="2100" inputmode="numeric" required value="${Number(work?.year) || new Date().getFullYear()}"></label></div>
-    <fieldset><legend>作品类型 <small>可多选</small></legend><div class="type-choices">${options.slice(0,10).map(typeChip).join('')}</div>${options.length > 10 ? `<details class="more-types" ${selected.length > 10 ? 'open' : ''}><summary>更多类型</summary><div class="type-choices">${options.slice(10).map(typeChip).join('')}</div></details>` : ''}</fieldset>
+    <label class="studio-field">年份<input type="number" name="year" min="1900" max="2100" inputmode="numeric" ${work && Object.hasOwn(work, 'requestNote') ? 'placeholder="待补充"' : 'required'} value="${work ? (work.year ?? '') : new Date().getFullYear()}"></label></div>
+    ${workTypeChoices(work?.types || ['原创'])}
     ${!legacy || (isAdmin(user) && SEED_WORKS.some(seed => seed.id === work.id)) ? `<label class="studio-field">官方作品页 <small>选填</small><input type="url" name="playbackUrl" value="${escapeHTML(work?.playbackUrl || playbackOverrides[work?.id] || '')}" placeholder="粘贴官方平台的作品网址"><small>供审核时核对作品，支持哔哩哔哩、腾讯视频等平台</small></label>` : ''}
     <label class="studio-field">作品介绍 <small>选填</small><textarea name="summary" maxlength="2400" rows="3" placeholder="用几句话介绍这部作品">${escapeHTML(work?.summary || '')}</textarea></label></section>
     <section class="studio-panel form-stack"><h2>作品封面</h2><div class="cover-sample"><div class="sample-art" data-poster="${style}"><img alt="" ${safeImage(work?.coverImage) ? 'src="' + escapeHTML(work.coverImage) + '"' : 'hidden'}><b>${escapeHTML((work?.title || '作').slice(0,1))}</b></div><div><small>封面预览</small><strong data-sample-title>${escapeHTML(work?.title || '作品名称')}</strong><span data-sample-meta></span></div></div>
@@ -274,7 +343,7 @@ function setupWorkForm(form, original = {}) {
     const user = currentUser();
     if (!user) { openAuth(); return; }
     const values = new FormData(form);
-    const data = {id:form.dataset.id, version:Number(form.dataset.version), title:fields.title.value.trim(), year:Number(fields.year.value),
+    const data = {id:form.dataset.id, version:Number(form.dataset.version), title:fields.title.value.trim(), year:fields.year.value ? Number(fields.year.value) : null,
       region:fields.region.value, playbackUrl:fields.playbackUrl?.value.trim() || '', types:values.getAll('types'), poster:fields.poster.value, coverImage:fields.coverImage.value.trim() || initialImage, summary:fields.summary.value.trim()};
     if (!data.title || !data.types.length) { error.textContent = '请填写作品名称，并至少选择一种类型。'; return; }
     if (data.coverImage && !safeImage(data.coverImage)) { error.textContent = '请填写有效的图片网址。'; return; }
@@ -289,6 +358,8 @@ function setupWorkForm(form, original = {}) {
       if (form.dataset.mode === 'legacy') {
         const work = getWork(data.id);
         if (!work || (work.createdBy !== user.username && !isAdmin(user))) throw new Error('当前账号没有编辑权限。');
+        const duplicate = matchingWork(data.title, data.id);
+        if (duplicate) { workMessage(error, '罗瓣已收录这部作品。', duplicate.id); return; }
         const {id,version,playbackUrl,...updates} = data;
         if (fields.playbackUrl && playbackUrl !== (playbackOverrides[id] || '')) {
           await accountRequest('playback',{id,url:playbackUrl});
@@ -307,7 +378,7 @@ function setupWorkForm(form, original = {}) {
       if (review && data.action === 'approve') await refreshPublished(false);
       if (!form.isConnected) return;
       navigate(review ? 'admin' : 'profile'); showToast(review ? (data.action === 'approve' ? '审核通过，作品已发布' : '稿件已退回') : '已提交审核');
-    } catch (exception) { error.textContent = exception.message; }
+    } catch (exception) { workMessage(error, exception.message, exception.workId); }
     finally { busy = false; form.querySelectorAll('[type=submit]').forEach(b => b.disabled = false); }
   });
 }
@@ -343,7 +414,7 @@ async function refreshPublished(redraw = true) {
     lastDiscussion = discussionKey;
     refreshFeatured();
     try { saveState(); } catch { /* Published works remain available in memory. */ }
-    if (redraw && !document.querySelector('dialog[open],#workForm,#commentForm:focus-within') && !currentRoute().startsWith('submission-') && !currentRoute().startsWith('review-')) renderApp();
+    if (redraw && !document.querySelector('dialog[open],#workForm,#requestForm,#commentForm:focus-within') && !currentRoute().startsWith('submission-') && !currentRoute().startsWith('review-')) renderApp();
   } catch { /* Static hosts and offline readers can still browse the local catalogue. */ }
 }
 async function renderEditorRoles(target) {
@@ -388,6 +459,8 @@ async function loadStudioSections(route) {
     const details = document.querySelector('.member-admin');
     details.addEventListener('toggle', () => { if (details.open) loadMemberInvites(details.querySelector('#memberInvites')); });
   }
+  const requestForm = document.getElementById('requestForm');
+  if (requestForm) setupRequestForm(requestForm);
   const form = document.getElementById('workForm');
   if (form) setupWorkForm(form,getWork(form.dataset.id));
   const target = document.querySelector('#submissionEditor,#mySubmissions,#adminQueue');
@@ -401,8 +474,14 @@ async function loadStudioSections(route) {
       const {item} = await accountRequest('submissions/' + encodeURIComponent(id));
       if (!target.isConnected) return;
       if (reviewing && (!isAdmin() || item.status !== 'pending')) { target.textContent = '稿件已处理或当前账号没有审核权限。'; return; }
-      target.outerHTML = renderEditor('',item,reviewing || (isAdmin() && item.createdBy !== currentUser().username && item.status === 'pending'));
-      setupWorkForm(document.getElementById('workForm'),item);
+      const canReview = reviewing || (isAdmin() && item.createdBy !== currentUser().username && item.status === 'pending');
+      if (!canReview && item.status !== 'approved' && route.startsWith('submission-') && item.requestOnly) {
+        target.outerHTML = renderWorkRequest(item);
+        setupRequestForm(document.getElementById('requestForm'));
+      } else {
+        target.outerHTML = renderEditor('',item,canReview);
+        setupWorkForm(document.getElementById('workForm'),item);
+      }
       return;
     }
     const {items} = await accountRequest(reviewing ? 'reviews' : 'submissions');
@@ -410,9 +489,9 @@ async function loadStudioSections(route) {
     target.innerHTML = items.map(item => {
       const name = escapeHTML(item.title);
       const href = reviewing ? 'review-' + item.id : item.status === 'approved' ? 'work-' + item.id : 'submission-' + item.id;
-      if (reviewing) return `<div class="studio-row">${thumb(item)}<span><strong><a href="#${href}">${name}</a></strong><small>${memberLink(item.createdBy,item.authorId)} 提交</small></span><a class="row-link" href="#${href}">审核 ›</a></div>`;
+      if (reviewing) return `<div class="studio-row">${thumb(item)}<span><strong><a href="#${href}">${name}</a></strong><small>${memberLink(item.createdBy,item.authorId)} · ${escapeHTML([item.region, ...item.types].join(' · '))}</small>${item.requestNote ? `<small class="request-excerpt">${escapeHTML(item.requestNote)}</small>` : ''}</span><a class="row-link" href="#${href}">审核 ›</a></div>`;
       return `<a class="studio-row" href="#${href}">${thumb(item)}<span><strong>${name}</strong><small>${escapeHTML(item.reason || submissionStatus[item.status])}</small></span><b class="row-link">${item.status === 'approved' ? '查看' : '修改'} ›</b></a>`;
-    }).join('') || `<p class="studio-empty">${reviewing ? '当前没有待审核的作品。' : '还没有投稿。'}</p>`;
+    }).join('') || `<p class="studio-empty">${reviewing ? '当前没有待审核的作品。' : '还没有上线申请。'}</p>`;
   } catch (error) {
     if (!target.isConnected) return;
     target.textContent = error.message + ' ';

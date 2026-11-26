@@ -96,6 +96,14 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .swatches input:checked + span { box-shadow: 0 0 0 2px white,0 0 0 4px var(--green); }
 .editor-foot { justify-content: flex-end; }
 .editor-foot .form-error { margin-right: auto; }
+.work-request { max-width: 640px; }
+.work-request .studio-field small { display: inline; }
+.work-request .title-match,.request-privacy,.request-excerpt { font-size: 13px; color: var(--muted); margin: 0; }
+.work-request .title-match:empty,.work-request .form-error:empty { display: none; }
+.title-match a,.form-error a { color: var(--green-deep); text-decoration: underline; }
+.request-message p,.request-excerpt,.request-return { white-space: pre-wrap; overflow-wrap: anywhere; }
+.request-message p { margin: 10px 0 0; }
+.request-return { margin: 0; color: #865120; }
 .queue-panel,.review-note { margin-top: 12px; }
 @media(max-width:720px) {
   .studio-editor,.profile-columns { display: block; }

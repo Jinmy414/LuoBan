@@ -4,6 +4,7 @@ import io
 import sqlite3
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 from contextlib import closing
 from pathlib import Path
@@ -51,9 +52,61 @@ class CommunityTest(unittest.TestCase):
 
         self.as_user(2)
         for number in range(20):
-            self.assertEqual(self.post("submissions", **{**self.data, "id":f"entry-{number:032x}"}).status_code, 200)
+            self.assertEqual(self.post("submissions", **{**self.data, "id":f"entry-{number:032x}", "title":f"初稿{number}"}).status_code, 200)
         self.assertEqual(self.post("submissions", **self.data).status_code, 429)
         self.assertEqual(self.post("submissions", **{**self.data, "id":"entry-" + "0"*32, "version":1}).status_code, 200)
+
+    def test_request_privacy_and_title_checks_through_review(self):
+        self.as_user(2)
+        wish = dict(id=self.data["id"], action="request", title="新剧 第一季", types=["美剧"], region="欧美")
+        seeded = self.post("submissions", **{**wish, "title":"《黄石 第０１季》"})
+        self.assertEqual((seeded.status_code, seeded.json["workId"]), (409, "yellowstone-s1"))
+        self.assertEqual(self.post("submissions", **wish, requestNote="仅审核可见").status_code, 200)
+        self.assertEqual(self.guest.get("/api/works").json["works"], [])
+        self.as_user(3)
+        self.assertEqual(self.client.get("/api/submissions/" + wish["id"]).status_code, 404)
+        self.assertEqual(self.client.get("/api/reviews").status_code, 403)
+        another = {**wish, "id":"entry-" + "b"*32}
+        pending = self.post("submissions", **{**another, "title":"新剧第1季"})
+        self.assertEqual((pending.status_code, set(pending.json)), (409, {"error"}))
+        self.assertEqual(self.post("submissions", **{**another, "title":"新剧 第二季"}).status_code, 200)
+        self.as_user(1)
+        self.post("editors", id=3, grant=True)
+        self.as_user(3)
+        draft = next(i for i in self.client.get("/api/reviews").json["items"] if i["id"] == wish["id"])
+        self.assertTrue(draft["requestOnly"])
+        self.assertIsNone(draft["year"])
+        self.assertEqual(draft["requestNote"], "仅审核可见")
+        approve = {**draft, "action":"approve", "summary":"公开简介"}
+        for title in ("新剧第二季", "黄石 第一季"):
+            self.assertEqual(self.post("reviews", **{**approve, "title":title}).status_code, 409)
+        self.assertEqual(self.post("reviews", **approve).status_code, 200)
+        published, = self.guest.get("/api/works").json["works"]
+        self.assertNotIn("requestNote", published)
+        self.assertEqual(published["summary"], "公开简介")
+        self.assertFalse(self.client.get("/api/submissions/" + wish["id"]).json["item"]["requestOnly"])
+        self.as_user(2)
+        edit = {**self.data, "title":"新片名", "version":2}
+        self.assertEqual(self.post("submissions", **edit).status_code, 200)
+        fresh = {**wish, "id":"entry-" + "c"*32}
+        self.assertEqual(self.post("submissions", **fresh).json["workId"], wish["id"])
+        self.assertEqual(self.post("submissions", **{**fresh, "title":"新片名"}).status_code, 409)
+        self.as_user(1)
+        self.assertEqual(self.post("reviews", **{**edit, "version":3}, action="reject", reason="请保留原名").status_code, 200)
+        self.as_user(2)
+        self.assertEqual(self.post("submissions", **{**fresh, "title":"新片名"}).status_code, 200)
+
+    def test_concurrent_requests_for_same_title(self):
+        def submit(actor):
+            client = self.app.test_client()
+            client.set_cookie(COOKIE, str(actor))
+            title = "Ｔｅｓｔ　剧" if actor == 2 else "test剧"
+            return client.post("/api/submissions", headers={"Origin":"https://example.test"},
+                               json=dict(id=f"entry-{actor:032x}", action="request", title=title,
+                                         region="其他", types=["纪录片"])).status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(sorted(pool.map(submit, (2, 3))), [200, 409])
 
     def test_comment_scores_replies_and_persistent_notices(self):
         self.as_user(2)
