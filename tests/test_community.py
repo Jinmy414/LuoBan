@@ -108,6 +108,26 @@ class CommunityTest(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=2) as pool:
             self.assertEqual(sorted(pool.map(submit, (2, 3))), [200, 409])
 
+    def test_nested_seasons_keep_the_work_identity_and_separate_playback_history(self):
+        root = "animation-139-E8BE89E5A49CE5A4A7E5B08FE5A790E683B3"
+        second, third = root + "-s2", root + "-s3"
+        catalogues = [self.guest.get("/api/episodes/" + key).get_json() for key in (second, third)]
+        platforms = [{link["url"] for link in item["officialLinks"]} for item in catalogues]
+        url = next(iter(platforms[0] - platforms[1]))
+        self.as_user(2)
+        duplicate = self.post("submissions", **{**self.data, "title":"辉夜大小姐想让我告白 第３季"})
+        self.assertEqual((duplicate.status_code, duplicate.json["workId"]), (409, third))
+        self.assertEqual(self.post("history", id=second, url=url).status_code, 200)
+        self.assertNotEqual(self.post("history", id=third, url=url).status_code, 200)
+        self.assertEqual(self.client.get("/api/history").json["items"][0]["id"], second)
+        comment = dict(accountId=2, action="comment", id="d"*36, text="这个系列的讨论")
+        self.assertEqual(self.post("discussion/" + root, **comment).status_code, 200)
+        self.assertEqual(self.post("discussion/" + second, **comment).status_code, 404)
+        activity = self.guest.get("/api/works").json["discussion"]
+        self.assertEqual(activity[root]["comments"][0]["text"], comment["text"])
+        self.assertNotIn(second, activity)
+        self.assertEqual(self.guest.get("/api/episodes/yellowstone-s1-s2").status_code, 404)
+
     def test_comment_scores_replies_and_persistent_notices(self):
         self.as_user(2)
         self.post("submissions", **self.data)

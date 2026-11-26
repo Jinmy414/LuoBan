@@ -137,6 +137,22 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
         seed_works.extend(json.loads(content.partition(" = ")[2].strip().rstrip(";")))
     seed_ids = {work["id"] for work in seed_works}
     seed_titles = {title_key(work["title"]): work["id"] for work in seed_works}
+    work_names = {work["id"]: work["title"] for work in seed_works}
+    season_data = (root / "assets" / "anime-seasons.js").read_text()
+    season_ids = set()
+    for series in json.loads(season_data.partition(" = ")[2].strip().rstrip(";")):
+        root_id = series["rootId"]
+        title = work_names[root_id]
+        if series.get("combined"):
+            season_ids.add(root_id + "-s1")
+        seed_titles.setdefault(title_key(title + "第一季"), root_id)
+        for season in series["seasons"]:
+            season_id = f"{root_id}-s{season['n']}"
+            season_ids.add(season_id)
+            seed_titles.setdefault(title_key(season["title"]), season_id)
+            seed_titles.setdefault(title_key(title + season["label"]), season_id)
+    season_links = {key: catalogue[key] for key in season_ids if key in catalogue}
+    platform_by_link = {(key, link["url"]):link["platform"] for key, links in season_links.items() for link in links}
 
     def duplicate_title(conn, title, current_id):
         normalized = title_key(title)
@@ -163,7 +179,7 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
 
     traffic.mount(app, active_user, admin)
     public_activity = discussion.mount(app, db, active_user, admin, fail, now, seed_works)
-    episodes.mount(app, db, active_user, admin, now, fail, seed_ids)
+    episodes.mount(app, db, active_user, admin, now, fail, seed_ids | season_ids, season_links)
     profiles.mount(app, db, active_user, fail, imported, seed_ids)
 
     def entry(row, public=False):
@@ -214,7 +230,8 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
             return fail("请先登录。", 401)
         if request.method == "POST":
             key, url = request.json.get("id"), request.json.get("url")
-            if not isinstance(key, str) or not playback_platform(url):
+            if not isinstance(key, str) or not isinstance(url, str) or not (
+                    playback_platform(url) or (key, url) in platform_by_link):
                 return fail("请从作品的播放入口打开。")
             known = {link["url"] for link in catalogue.get(key, [])}
             override = db().execute("SELECT url FROM playback_overrides WHERE work_id=?", (key,)).fetchone()
@@ -234,7 +251,8 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
             WHERE h.user_id=? ORDER BY h.opened DESC,h.rowid DESC""", (user["id"],))
         items = []
         for r in rows:
-            item = dict(id=r["work_id"], url=r["url"], platform=playback_platform(r["url"]), opened=r["opened"])
+            platform = platform_by_link.get((r["work_id"], r["url"])) or playback_platform(r["url"])
+            item = dict(id=r["work_id"], url=r["url"], platform=platform, opened=r["opened"])
             if r["url"] == episodes.HISTORY_MARKER:
                 embedded = r["source"] in episodes.EMBED_URLS
                 item.update(platform=episodes.SOURCES[r["source"]][0] if embedded else "罗瓣", episode=r["label"],

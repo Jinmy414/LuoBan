@@ -221,3 +221,12 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .notice-excerpt { font-size:14px; }
 .notice-reader { padding:0 21px 22px; overflow:auto; }
 .notice-reader blockquote { margin:8px 0 18px; padding-left:12px; border-left:3px solid #b5cbbf; white-space:pre-wrap; overflow-wrap:anywhere; }
+
+.season-picker { margin: 18px 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; background: white; }
+.season-picker h2 { display: inline-block; margin: 0 14px 8px 0; font-size: 18px; }
+.season-options { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: middle; }
+.season-options button { min-height: 40px; }
+.season-options [aria-pressed="true"] { color: white; background: var(--green-deep); }
+.season-picker p { margin: 8px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.season-picker .text-link { margin-inline-start: 6px; }
+.season-more-platforms summary { width: fit-content; padding: 10px 0; cursor: pointer; color: var(--green); }

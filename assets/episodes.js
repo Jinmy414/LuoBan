@@ -8,7 +8,8 @@ document.addEventListener('click', (event) => {
     requestedResume = link.dataset.resumeWork;
 });
 window.addEventListener('hashchange', () => {
-  if (requestedResume && currentRoute() !== 'work-' + requestedResume) requestedResume = null;
+  const route = currentRoute();
+  if (requestedResume && (!route.startsWith('work-') || seasonPlaybackWork(route.slice(5))?.id !== requestedResume)) requestedResume = null;
 });
 
 function episodeTime(seconds) {
@@ -559,7 +560,21 @@ async function loadEpisodeAccess(work, target) {
         playEpisodes(work, catalogue, line.source, resume ? progress.label : line.episodes[0].label,
           resume ? progress.seconds : 0, resumeRequested);
       }
-      if (!line) access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的信号源。</p>');
+      const links = (catalogue.officialLinks || []).filter(link => link.url.startsWith('https://'));
+      if (links.length) {
+        const buttons = links.map(link =>
+          `<a class="studio-action" data-official href="${escapeHTML(link.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(link.platform)} ↗</a>`
+        );
+        const visibleCount = 4;
+        const more = buttons.length > visibleCount
+          ? `<details class="season-more-platforms"><summary>更多平台（${buttons.length - visibleCount}）</summary><div class="detail-actions">${buttons.slice(visibleCount).join('')}</div></details>` : '';
+        const platforms = `<p>可观看地区和会员要求以平台页面为准。</p><div class="detail-actions">${buttons.slice(0, visibleCount).join('')}</div>${more}`;
+        access.insertAdjacentHTML('afterbegin', line
+          ? `<details><summary>官方播放平台（${links.length}）</summary>${platforms}</details>`
+          : `<section><h2>官方播放平台</h2>${platforms}</section>`);
+      } else if (!line) {
+        access.insertAdjacentHTML('afterbegin', '<p class="studio-empty">暂无已验证的信号源。</p>');
+      }
       const opener = access.querySelector('[data-import]');
       if (opener)
         opener.onclick = () =>
@@ -578,5 +593,16 @@ async function loadEpisodeAccess(work, target) {
       }
     }
   }
+  function rememberOfficial(event) {
+    const link = event.target.closest('a[data-official]');
+    const accountId = activeAccount?.id;
+    if (!link || !accountId || (event.type === 'auxclick' && event.button !== 1)) return;
+    const url = link.getAttribute('href');
+    progressWrites = progressWrites.then(() => {
+      if (activeAccount?.id === accountId) return accountRequest('history', {id:work.id, url});
+    }).catch(() => { if (access.isConnected) showToast('观看记录未能同步'); });
+  }
+  access.addEventListener('click', rememberOfficial);
+  access.addEventListener('auxclick', rememberOfficial);
   await refresh();
 }

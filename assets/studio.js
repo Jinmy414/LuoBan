@@ -232,7 +232,17 @@ function renderWorkRequest(item = {}) {
 function matchingWork(title, exceptId) {
   const normalize = text => text.normalize('NFKC').toLowerCase().replace(/[\s\p{Cf}]/gu, '').replace(/^《(.*)》$/u, '$1');
   const key = normalize(title);
-  return key && state.works.find(work => work.id !== exceptId && normalize(work.title) === key);
+  if (!key) return null;
+  const existing = state.works.find(work => work.id !== exceptId && normalize(work.title) === key);
+  if (existing) return existing;
+  for (const [rootId, seasons] of animeSeries) {
+    const root = getWork(rootId);
+    if (!root || rootId === exceptId) continue;
+    const season = seasons.find(s => s.n && [s.title, root.title + s.label,
+      /^第.+季$/.test(s.label) && root.title + '第' + s.n + '季'].some(name => name && normalize(name) === key));
+    if (season) return season;
+  }
+  return null;
 }
 
 function workMessage(target, message, id) {
@@ -450,7 +460,7 @@ async function loadStudioSections(route) {
   if (history) loadWatchHistory(history);
   const play = document.getElementById('playbackLinks');
   if (play) {
-    const work = getWork(play.dataset.work);
+    const work = seasonPlaybackWork(play.dataset.work);
     if (work) loadEpisodeAccess(work, play);
   }
   const roles = document.getElementById('editorRoles');
@@ -548,12 +558,13 @@ async function loadWatchHistory(target) {
     const {items} = await accountRequest('history');
     if (!target.isConnected) return;
     const rows = items.map(item => {
-      const work = getWork(item.id);
+      const routeId = animeSeasonById.has(item.id + '-all') && item.episode ? item.id + '-all' : item.id;
+      const work = seasonPlaybackWork(routeId);
       if (!work) return '';
       const when = new Date(item.opened * 1000).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
       const description = item.episode && item.seconds !== null ? item.episode + ' · ' + episodeTime(item.seconds)
         : '打开了' + item.platform + (item.episode ? ' · ' + item.episode : '');
-      return `<a class="studio-row" href="#work-${escapeHTML(work.id)}" ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} · ${escapeHTML(description)}</small></span><b class="row-link">${item.episode ? '续看' : '查看'} ›</b></a>`;
+      return `<a class="studio-row" href="#work-${escapeHTML(routeId)}" ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} · ${escapeHTML(description)}</small></span><b class="row-link">${item.episode ? '续看' : '查看'} ›</b></a>`;
     }).filter(Boolean);
     target.innerHTML = rows.slice(0,5).join('') || '<p class="studio-empty">从作品详情打开播放源后，记录会出现在这里。</p>';
     if (rows.length > 5) target.insertAdjacentHTML('beforeend',`<details><summary>查看全部 ${rows.length} 部</summary>${rows.slice(5).join('')}</details>`);

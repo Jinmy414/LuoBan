@@ -82,6 +82,22 @@ def validated_catalogue(data, source="custom"):
     return title.strip(), json.dumps(result, ensure_ascii=False, separators=(",", ":"))
 
 
+def bundled_entries(line, urls_by_source):
+    if "fromWork" in line:
+        parent = (line["fromWork"], line["source"])
+        urls = urls_by_source.get(parent)
+        first, last = line.get("first"), line.get("last")
+        if ("episodes" in line or "urls" in line or not isinstance(urls, list)
+                or type(first) is not int or type(last) is not int or not 1 <= first <= last <= len(urls)):
+            raise ValueError(f"Invalid bundled episode range for {line['work']} from {parent}: {first}..{last}")
+        urls = urls[first - 1:last]
+    elif "episodes" in line:
+        return line["episodes"]
+    else:
+        urls = line["urls"]
+    return [dict(label=f"第{i}集", url=url) for i, url in enumerate(urls, 1)]
+
+
 def install_catalogues(conn, path):
     """Reconcile verified provider data while keeping administrator overrides and removals."""
     raw = path.read_bytes()
@@ -96,23 +112,30 @@ def install_catalogues(conn, path):
         previous = current_digest()
         if previous and previous[0] == digest:
             return
-        installed = set(conn.execute("SELECT work_id,source FROM installed_episode_lines"))
+        installed = {(work, source) for work, source in conn.execute("SELECT work_id,source FROM installed_episode_lines")}
         existing = {(work, source): (revision, title, body) for work, source, revision, title, body in
                     conn.execute("SELECT work_id,source,revision,title,episodes FROM episode_lines")}
+        lines = json.loads(raw)
+        urls_by_source = {(line["work"], line["source"]): line["urls"] for line in lines if "urls" in line}
         keys = set()
-        for line in json.loads(raw):
+        # Resolve the original lines before their ranges, regardless of file order.
+        for line in sorted(lines, key=lambda item: "fromWork" in item):
             key = (line["work"], line["source"])
             if key in keys or key[1] not in SOURCES:
                 raise ValueError(f"Invalid bundled source: {key}")
             keys.add(key)
-            entries = line["episodes"] if "episodes" in line else [
-                dict(label=f"第{i}集", url=url) for i, url in enumerate(line["urls"], 1)
-            ]
+            entries = bundled_entries(line, urls_by_source)
             title, body = validated_catalogue(dict(title=line["title"], episodes=entries), key[1])
             revision = "seed:" + hashlib.sha256((title + "\n" + body).encode()).hexdigest()[:24]
             old = existing.get(key)
             if key not in installed:
                 conn.execute("INSERT INTO installed_episode_lines VALUES (?,?)", key)
+                if "fromWork" in line:
+                    # A removed or replaced original source must not reappear through a new season.
+                    parent = conn.execute("SELECT revision FROM episode_lines WHERE work_id=? AND source=?",
+                                          (line["fromWork"], line["source"])).fetchone()
+                    if not parent or not parent[0].startswith("seed:"):
+                        continue
                 conn.execute("INSERT OR IGNORE INTO episode_lines VALUES (?,?,?,?,?)", (*key, revision, title, body))
             elif old and old[0] != revision:
                 # Earlier releases used a random revision. Adopt only unchanged copies on upgrade.
@@ -128,7 +151,7 @@ def install_catalogues(conn, path):
         conn.execute("INSERT OR REPLACE INTO episode_bundle VALUES (1,?)", (digest,))
 
 
-def mount(app, db, active_user, admin, now, fail, seed_ids):
+def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
     def published(key):
         return key in seed_ids or db().execute(
             "SELECT 1 FROM contributions WHERE id=? AND live IS NOT NULL", (key,)).fetchone() is not None
@@ -144,7 +167,8 @@ def mount(app, db, active_user, admin, now, fail, seed_ids):
                           episodes=json.loads(r["episodes"])) for r in rows]
             progress = db().execute("SELECT source,label,seconds FROM episode_progress WHERE user_id=? AND work_id=?",
                                     (user["id"], key)).fetchone() if user else None
-            payload = dict(lines=lines, progress=dict(progress) if progress else None)
+            payload = dict(lines=lines, progress=dict(progress) if progress else None,
+                           officialLinks=official_links.get(key, []))
             if admin(user):
                 payload["providers"] = [dict(id=k, name=v[0], host=v[1]) for k,v in SOURCES.items()]
             return jsonify(payload)

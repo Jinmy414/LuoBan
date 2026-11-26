@@ -25729,5 +25729,301 @@
         "url": "https://hd.kuktxu.com/play/dL9AB5ve/index.m3u8"
       }
     ]
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s1",
+    "source": "modu",
+    "title": "魔卡少女樱 第一季",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 1,
+    "last": 35
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s2",
+    "source": "modu",
+    "title": "魔卡少女樱 第二季（库洛牌篇续）",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 36,
+    "last": 46
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s3",
+    "source": "modu",
+    "title": "魔卡少女樱 第三季（小樱牌篇）",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 47,
+    "last": 70
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s1",
+    "source": "ikun",
+    "title": "魔卡少女樱 第一季",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 1,
+    "last": 35
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s2",
+    "source": "ikun",
+    "title": "魔卡少女樱 第二季（库洛牌篇续）",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 36,
+    "last": 46
+  },
+  {
+    "work": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1-s3",
+    "source": "ikun",
+    "title": "魔卡少女樱 第三季（小樱牌篇）",
+    "fromWork": "animation-10-E9AD94E58DA1E5B091E5A5B3E6A8B1",
+    "first": 47,
+    "last": 70
+  },
+  {
+    "work": "animation-21-E7B2BEE781B5E4B896E7BAAA-s1",
+    "source": "ruyi",
+    "title": "精灵世纪 第一季",
+    "fromWork": "animation-21-E7B2BEE781B5E4B896E7BAAA",
+    "first": 1,
+    "last": 26
+  },
+  {
+    "work": "animation-21-E7B2BEE781B5E4B896E7BAAA-s2",
+    "source": "ruyi",
+    "title": "精灵世纪 第二季",
+    "fromWork": "animation-21-E7B2BEE781B5E4B896E7BAAA",
+    "first": 27,
+    "last": 52
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s1",
+    "source": "modu",
+    "title": "吞噬星空 第一季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 1,
+    "last": 26
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s2",
+    "source": "modu",
+    "title": "吞噬星空 第二季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 27,
+    "last": 52
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s3",
+    "source": "modu",
+    "title": "吞噬星空 第三季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 53,
+    "last": 85
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s4",
+    "source": "modu",
+    "title": "吞噬星空 宇宙篇",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 86,
+    "last": 251
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s1",
+    "source": "hongniu",
+    "title": "吞噬星空 第一季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 1,
+    "last": 26
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s2",
+    "source": "hongniu",
+    "title": "吞噬星空 第二季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 27,
+    "last": 52
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s3",
+    "source": "hongniu",
+    "title": "吞噬星空 第三季",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 53,
+    "last": 85
+  },
+  {
+    "work": "animation-205-E5909EE599ACE6989FE7A9BA-s4",
+    "source": "hongniu",
+    "title": "吞噬星空 宇宙篇",
+    "fromWork": "animation-205-E5909EE599ACE6989FE7A9BA",
+    "first": 86,
+    "last": 251
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s1",
+    "source": "modu",
+    "title": "师兄啊师兄 第一季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 1,
+    "last": 13
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s2",
+    "source": "modu",
+    "title": "师兄啊师兄 第二季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 14,
+    "last": 39
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s3",
+    "source": "modu",
+    "title": "师兄啊师兄 年番",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 40,
+    "last": 91
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s4",
+    "source": "modu",
+    "title": "师兄啊师兄 年番2",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 92,
+    "last": 143
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s5",
+    "source": "modu",
+    "title": "师兄啊师兄 最终季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 144,
+    "last": 168
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s1",
+    "source": "hongniu",
+    "title": "师兄啊师兄 第一季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 1,
+    "last": 13
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s2",
+    "source": "hongniu",
+    "title": "师兄啊师兄 第二季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 14,
+    "last": 39
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s3",
+    "source": "hongniu",
+    "title": "师兄啊师兄 年番",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 40,
+    "last": 91
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s4",
+    "source": "hongniu",
+    "title": "师兄啊师兄 年番2",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 92,
+    "last": 143
+  },
+  {
+    "work": "animation-207-E5B888E58584E5958AE5B888E58584-s5",
+    "source": "hongniu",
+    "title": "师兄啊师兄 最终季",
+    "fromWork": "animation-207-E5B888E58584E5958AE5B888E58584",
+    "first": 144,
+    "last": 168
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s1",
+    "source": "hongniu",
+    "title": "狐妖小红娘 下沙篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 1,
+    "last": 13
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s2",
+    "source": "hongniu",
+    "title": "狐妖小红娘 王权篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 14,
+    "last": 27
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s3",
+    "source": "hongniu",
+    "title": "狐妖小红娘 月红篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 28,
+    "last": 48
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s4",
+    "source": "hongniu",
+    "title": "狐妖小红娘 千颜篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 49,
+    "last": 63
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s5",
+    "source": "hongniu",
+    "title": "狐妖小红娘 南国篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 64,
+    "last": 89
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s6",
+    "source": "hongniu",
+    "title": "狐妖小红娘 竹业篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 90,
+    "last": 101
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s7",
+    "source": "hongniu",
+    "title": "狐妖小红娘 尾生篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 102,
+    "last": 111
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s8",
+    "source": "hongniu",
+    "title": "狐妖小红娘 金晨曦篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 112,
+    "last": 121
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s9",
+    "source": "hongniu",
+    "title": "狐妖小红娘 沐天城篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 122,
+    "last": 133
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s10",
+    "source": "hongniu",
+    "title": "狐妖小红娘 两生花篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 134,
+    "last": 145
+  },
+  {
+    "work": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898-s11",
+    "source": "hongniu",
+    "title": "狐妖小红娘 无暮篇",
+    "fromWork": "animation-209-E78B90E5A696E5B08FE7BAA2E5A898",
+    "first": 146,
+    "last": 148
   }
 ]
