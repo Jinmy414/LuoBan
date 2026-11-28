@@ -166,6 +166,7 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .episode-player-head h2 { flex:1; margin:0; font-size:21px; }
 .episode-player-head [data-count] { color:var(--muted); font-size:14px; }
 .episode-stage { position:relative; isolation:isolate; aspect-ratio:16/9; overflow:hidden; border-radius:14px; margin:12px 0 16px; background:#12231e; }
+.episode-stage.youtube-stage { width:100%; min-height:200px; }
 .episode-stage iframe { border:0; }
 .episode-stage iframe,.episode-stage video,.episode-preview { display:block; width:100%; height:100%; }
 .episode-stage video { background:#080c0a; }
@@ -230,3 +231,13 @@ body:has(.studio-dialog[open]) { overflow: hidden; }
 .season-picker p { margin: 8px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
 .season-picker .text-link { margin-inline-start: 6px; }
 .season-more-platforms summary { width: fit-content; padding: 10px 0; cursor: pointer; color: var(--green); }
+
+.resume-card {
+  padding: 13px; border-radius: 16px; background: var(--surface, #f3f6f4);
+}
+.resume-card .studio-thumb { width: 48px; height: 66px; border-radius: 8px; }
+.resume-card small + small { margin-top: 3px; }
+.history-more { margin-top: 12px; }
+.history-more summary { padding: 5px 0; cursor: pointer; color: var(--green-deep); font-size: 14px; }
+.watchlist-row > a { display: flex; align-items: center; flex: 1; min-width: 0; gap: 11px; }
+.watchlist-row strong { overflow-wrap: anywhere; }

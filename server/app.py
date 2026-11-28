@@ -28,7 +28,7 @@ COOKIE = "luoban_session"
 SESSION_AGE = 14 * 86400
 CONTENT_POLICY = (
     "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
-    "form-action 'self'; script-src 'self'{turnstile}; style-src 'self'; font-src 'self'; "
+    "form-action 'self'; script-src 'self' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/{turnstile}; style-src 'self'; font-src 'self'; "
     "img-src 'self' https: data: blob:; media-src 'self' https: blob:; "
     "connect-src 'self' https:; worker-src 'self' blob:; "
     "frame-src https://player.bilibili.com https://www.youtube.com{turnstile}"

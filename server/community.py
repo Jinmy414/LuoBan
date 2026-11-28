@@ -104,7 +104,7 @@ def work_fields(data, admin, previous, *, allow_unknown_year=False):
     title, summary = string("title", 120), string("summary", 2400)
     region, year = data.get("region"), data.get("year")
     types, poster = data.get("types"), data.get("poster")
-    if not title_key(title) or region not in ("中国", "日本", "欧美", "其他"):
+    if not title_key(title) or region not in ("中国", "日本", "韩国", "欧美", "其他"):
         raise ValueError("请填写作品名称并选择地区。")
     if not (allow_unknown_year and year is None) and (type(year) is not int or not 1900 <= year <= 2100):
         raise ValueError("请填写 1900 到 2100 之间的年份。")
@@ -151,8 +151,10 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
             season_ids.add(season_id)
             seed_titles.setdefault(title_key(season["title"]), season_id)
             seed_titles.setdefault(title_key(title + season["label"]), season_id)
-    season_links = {key: catalogue[key] for key in season_ids if key in catalogue}
-    platform_by_link = {(key, link["url"]):link["platform"] for key, links in season_links.items() for link in links}
+    for work in seed_works:
+        for alias in work.get("aliases", []):
+            seed_titles.setdefault(title_key(alias), work["id"])
+    platform_by_link = {(key, link["url"]):link["platform"] for key, links in catalogue.items() for link in links}
 
     def duplicate_title(conn, title, current_id):
         normalized = title_key(title)
@@ -183,11 +185,17 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
             url = row[0] if row else None
             platform = playback_platform(url)
             return [{"platform": platform, "url": url}] if platform else []
-        return season_links.get(key, [])
+        links = catalogue.get(key, [])
+        override = db().execute("SELECT url FROM playback_overrides WHERE work_id=?", (key,)).fetchone()
+        if override and playback_platform(override["url"]):
+            return [{"platform": playback_platform(override["url"]), "url": override["url"]},
+                    *[link for link in links if link["url"] != override["url"]]]
+        return links
 
     traffic.mount(app, active_user, admin)
     public_activity = discussion.mount(app, db, active_user, admin, fail, now, seed_works)
-    episodes.mount(app, db, active_user, admin, now, fail, seed_ids | season_ids, official_links)
+    episodes.mount(app, db, active_user, admin, now, fail, seed_ids | season_ids, official_links,
+                   {key for key, links in catalogue.items() if links})
     profiles.mount(app, db, active_user, fail, imported, seed_ids)
 
     def entry(row, public=False):
@@ -217,7 +225,12 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
         aliases = {r["name"]: r["username"] for r in db().execute("""
             SELECT name,username FROM member_claims JOIN accounts ON accounts.id=member_claims.owner WHERE name!=username
         """)}
-        return jsonify(works=[entry(row, True) for row in rows], playback=overrides, memberNames=aliases, discussion=public_activity())
+        viewer = active_user()
+        viewer_id = viewer["id"] if viewer else None
+        response = jsonify(works=[entry(row, True) for row in rows], playback=overrides, memberNames=aliases,
+                           discussion=public_activity(viewer_id), viewerId=viewer_id)
+        response.vary.add("Cookie")
+        return response
 
     @app.post("/api/playback")
     def update_seed_source():
@@ -254,17 +267,25 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
                 conn.execute("""INSERT INTO watch_history VALUES (?,?,?,?) ON CONFLICT(user_id,work_id)
                     DO UPDATE SET url=excluded.url,opened=excluded.opened""", (user["id"],key,url,now()))
             return jsonify(ok=True)
-        rows = db().execute("""SELECT h.*,p.source,p.label,p.seconds FROM watch_history h
-            LEFT JOIN episode_progress p ON h.user_id=p.user_id AND h.work_id=p.work_id
-            WHERE h.user_id=? ORDER BY h.opened DESC,h.rowid DESC""", (user["id"],))
+        rows = db().execute("""WITH recent AS (
+              SELECT h.*,h.rowid AS seq,
+                     CASE WHEN h.url=:opened THEN o.source ELSE p.source END AS source,
+                     CASE WHEN h.url=:opened THEN o.label ELSE p.label END AS label,
+                     CASE WHEN h.url!=:opened AND p.seconds>0 THEN p.seconds END AS seconds
+              FROM watch_history h LEFT JOIN episode_progress p USING(user_id,work_id)
+              LEFT JOIN episode_opens o USING(user_id,work_id) WHERE h.user_id=:user)
+            SELECT r.*,EXISTS(SELECT 1 FROM json_each(l.episodes) e
+                              WHERE json_extract(e.value,'$.label')=r.label) AS available
+            FROM recent r LEFT JOIN episode_lines l ON l.work_id=r.work_id AND l.source=r.source
+            ORDER BY r.opened DESC,r.seq DESC""", {"opened": episodes.OPEN_MARKER, "user": user["id"]})
         items = []
         for r in rows:
             platform = platform_by_link.get((r["work_id"], r["url"])) or playback_platform(r["url"])
-            item = dict(id=r["work_id"], url=r["url"], platform=platform, opened=r["opened"])
-            if r["url"] == episodes.HISTORY_MARKER:
-                embedded = r["source"] in episodes.EMBED_URLS
-                item.update(platform=episodes.SOURCES[r["source"]][0] if embedded else "罗瓣", episode=r["label"],
-                            seconds=None if embedded else (r["seconds"] or 0))
+            item = dict(id=r["work_id"], url=r["url"], platform=platform, opened=r["opened"], kind="opened")
+            if r["url"] in (episodes.HISTORY_MARKER, episodes.OPEN_MARKER):
+                item["platform"] = episodes.SOURCES[r["source"]][0] if r["source"] in episodes.EMBED_URLS else "罗瓣"
+                if r["available"]:
+                    item.update(episode=r["label"], seconds=r["seconds"], kind="progress" if r["seconds"] else "opened")
             items.append(item)
         return jsonify(items=items)
 
@@ -335,6 +356,7 @@ def mount(app, db, active_user, public_user, now, fail, root, imported):
             if action == "delete":
                 conn.execute("DELETE FROM watch_history WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM episode_progress WHERE work_id=?", (key,))
+                conn.execute("DELETE FROM episode_opens WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM episode_lines WHERE work_id=?", (key,))
                 conn.execute("DELETE FROM comment_notices WHERE comment_id IN (SELECT id FROM work_comments WHERE work_id=?)", (key,))
                 conn.execute("DELETE FROM work_comments WHERE work_id=?", (key,))

@@ -11,6 +11,13 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS member_showcases (
  user_id INTEGER PRIMARY KEY REFERENCES accounts(id), favorites TEXT, featured TEXT
 );
+CREATE TABLE IF NOT EXISTS private_watchlist (
+ user_id INTEGER NOT NULL REFERENCES accounts(id), work_id TEXT NOT NULL, PRIMARY KEY(user_id,work_id)
+);
+CREATE TRIGGER IF NOT EXISTS remove_deleted_work_from_watchlist AFTER DELETE ON contributions
+BEGIN
+ DELETE FROM private_watchlist WHERE work_id=OLD.id;
+END;
 """
 
 
@@ -37,6 +44,37 @@ def mount(app, db, active_user, fail, imported, seed_ids):
     def published(key):
         return isinstance(key, str) and (key in seed_ids or db().execute(
             "SELECT 1 FROM contributions WHERE id=? AND live IS NOT NULL", (key,)).fetchone() is not None)
+
+    @app.route("/api/watchlist", methods=["GET", "POST"])
+    def watchlist():
+        user = active_user()
+        if not user:
+            return fail("请先登录后查看想看清单。", 401)
+        account_id = user["id"]
+        if request.method == "GET":
+            key = request.args.get("id")
+            if key is not None:
+                row = db().execute("SELECT 1 FROM private_watchlist WHERE user_id=? AND work_id=?",
+                                   (account_id, key)).fetchone()
+                return jsonify(wanted=bool(row and published(key)))
+            rows = db().execute("""SELECT w.work_id,c.live IS NOT NULL AS live FROM private_watchlist w
+                LEFT JOIN contributions c ON c.id=w.work_id WHERE w.user_id=? ORDER BY w.rowid DESC""", (account_id,))
+            return jsonify(workIds=[r["work_id"] for r in rows if r["work_id"] in seed_ids or r["live"]])
+        data = request.json
+        if type(data.get("accountId")) is not int or data["accountId"] != account_id:
+            return fail("请使用自己的账号修改想看清单。", 403)
+        key, wanted = data.get("id"), data.get("wanted")
+        if not isinstance(key, str) or not key or type(wanted) is not bool:
+            return fail("请重新选择作品。")
+        with db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if wanted:
+                if not published(key):
+                    return fail("这部作品尚未公开。", 404)
+                conn.execute("INSERT OR IGNORE INTO private_watchlist(user_id,work_id) VALUES (?,?)", (account_id, key))
+            else:
+                conn.execute("DELETE FROM private_watchlist WHERE user_id=? AND work_id=?", (account_id, key))
+        return jsonify(wanted=wanted)
 
     def selections(account_id):
         row = db().execute("SELECT favorites,featured FROM member_showcases WHERE user_id=?", (account_id,)).fetchone()

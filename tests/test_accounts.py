@@ -77,7 +77,8 @@ class AccountsTest(unittest.TestCase):
         for path in ["/", "/api/session", "/missing"]:
             with self.client.get(path) as response:
                 policy = response.headers["Content-Security-Policy"]
-                for directive in ["script-src 'self'", "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'"]:
+                for directive in ["script-src 'self' https://www.youtube.com/iframe_api https://www.youtube.com/s/player/",
+                                  "style-src 'self'", "frame-ancestors 'none'", "base-uri 'none'"]:
                     self.assertIn(directive, policy.split("; "))
                 self.assertNotIn("unsafe-inline", policy)
                 self.assertEqual(response.headers["X-Frame-Options"], "DENY")

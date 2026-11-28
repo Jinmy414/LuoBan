@@ -104,7 +104,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "神兵小将 第二季",
         "year": 2018,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss38471"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss38471",
+        "episodeCount": 52
       }
     ]
   },
@@ -126,7 +127,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "虹猫蓝兔光明剑",
         "title": "虹猫蓝兔光明剑",
         "year": 2009,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss5374"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss5374",
+        "episodeCount": 79
       },
       {
         "n": 4,
@@ -147,14 +149,16 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "四驱兄弟 WGP",
         "year": 1997,
-        "sourceUrl": "https://bgm.tv/subject/47759"
+        "sourceUrl": "https://bgm.tv/subject/47759",
+        "episodeCount": 51
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "四驱兄弟 MAX",
         "year": 1998,
-        "sourceUrl": "https://bgm.tv/subject/47760"
+        "sourceUrl": "https://bgm.tv/subject/47760",
+        "episodeCount": 51
       }
     ]
   },
@@ -254,7 +258,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第七季",
         "title": "我叫MT 第七季",
         "year": 2024,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md22224444"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md22224444",
+        "episodeCount": 10
       }
     ]
   },
@@ -345,7 +350,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "快乐星猫 第二季",
         "year": 2008,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss88104"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss88104",
+        "episodeCount": 26
       },
       {
         "n": 3,
@@ -359,21 +365,24 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第四季",
         "title": "快乐星猫 第四季",
         "year": 2013,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438584"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438584",
+        "episodeCount": 26
       },
       {
         "n": 5,
         "label": "第五季",
         "title": "快乐星猫 第五季",
         "year": 2013,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438594"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438594",
+        "episodeCount": 26
       },
       {
         "n": 6,
         "label": "第六季",
         "title": "快乐星猫 第六季",
         "year": 2013,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438604"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28438604",
+        "episodeCount": 26
       },
       {
         "n": 7,
@@ -520,7 +529,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "铁胆火车侠 第二季",
         "year": 2002,
-        "sourceUrl": "https://bgm.tv/subject/8413"
+        "sourceUrl": "https://bgm.tv/subject/8413",
+        "episodeCount": 52
       }
     ]
   },
@@ -718,7 +728,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "零之使魔 双月骑士",
         "year": 2007,
-        "sourceUrl": "https://bgm.tv/subject/1103"
+        "sourceUrl": "https://bgm.tv/subject/1103",
+        "episodeCount": 12
       },
       {
         "n": 3,
@@ -732,7 +743,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第四季",
         "title": "零之使魔F",
         "year": 2012,
-        "sourceUrl": "https://bgm.tv/subject/25823"
+        "sourceUrl": "https://bgm.tv/subject/25823",
+        "episodeCount": 12
       }
     ]
   },
@@ -2007,7 +2019,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "火凤燎原 第二季",
         "year": 2025,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md23664981/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md23664981/",
+        "episodeCount": 16
       }
     ]
   },
@@ -2022,7 +2035,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "LEAF",
         "title": "凸变英雄 LEAF",
         "year": 2018,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md23352/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md23352/",
+        "episodeCount": 12
       }
     ]
   },
@@ -2036,21 +2050,24 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "汉化日记 第二季",
         "year": 2020,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28229502/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28229502/",
+        "episodeCount": 12
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "汉化日记 第三季",
         "year": 2022,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28235413/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28235413/",
+        "episodeCount": 12
       },
       {
         "n": 4,
         "label": "第四季",
         "title": "汉化日记 第四季",
         "year": 2024,
-        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28339882/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/media/md28339882/",
+        "episodeCount": 12
       }
     ]
   },
@@ -2064,7 +2081,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "灵笼 第二季",
         "year": 2025,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ep1633643/"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ep1633643/",
+        "episodeCount": 12
       }
     ]
   },
@@ -2079,14 +2097,16 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "吞噬星空 第二季",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/336340"
+        "sourceUrl": "https://bgm.tv/subject/336340",
+        "episodeCount": 26
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "吞噬星空 第三季",
         "year": 2022,
-        "sourceUrl": "https://bgm.tv/subject/583978"
+        "sourceUrl": "https://bgm.tv/subject/583978",
+        "episodeCount": 33
       },
       {
         "n": 4,
@@ -2107,49 +2127,56 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "斗破苍穹 第二季",
         "year": 2018,
-        "sourceUrl": "https://bgm.tv/subject/212361"
+        "sourceUrl": "https://bgm.tv/subject/212361",
+        "episodeCount": 12
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "斗破苍穹 第三季",
         "year": 2019,
-        "sourceUrl": "https://bgm.tv/subject/282734"
+        "sourceUrl": "https://bgm.tv/subject/282734",
+        "episodeCount": 12
       },
       {
         "n": 4,
         "label": "第四季",
         "title": "斗破苍穹 第四季",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/291650"
+        "sourceUrl": "https://bgm.tv/subject/291650",
+        "episodeCount": 24
       },
       {
         "n": 5,
         "label": "第五季",
         "title": "斗破苍穹之迦南学院",
         "year": 2022,
-        "sourceUrl": "https://bgm.tv/subject/345781"
+        "sourceUrl": "https://bgm.tv/subject/345781",
+        "episodeCount": 52
       },
       {
         "n": 6,
         "label": "第六季",
         "title": "斗破苍穹 年番2",
         "year": 2023,
-        "sourceUrl": "https://bgm.tv/subject/443867"
+        "sourceUrl": "https://bgm.tv/subject/443867",
+        "episodeCount": 53
       },
       {
         "n": 7,
         "label": "第七季",
         "title": "斗破苍穹 中州风云志",
         "year": 2024,
-        "sourceUrl": "https://bgm.tv/subject/449353"
+        "sourceUrl": "https://bgm.tv/subject/449353",
+        "episodeCount": 52
       },
       {
         "n": 8,
         "label": "第八季",
         "title": "斗破苍穹 年番4",
         "year": 2025,
-        "sourceUrl": "https://bgm.tv/subject/562145"
+        "sourceUrl": "https://bgm.tv/subject/562145",
+        "episodeCount": 62
       }
     ]
   },
@@ -2164,28 +2191,32 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "师兄啊师兄 第二季",
         "year": 2023,
-        "sourceUrl": "https://bgm.tv/subject/428130"
+        "sourceUrl": "https://bgm.tv/subject/428130",
+        "episodeCount": 26
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "师兄啊师兄 年番",
         "year": 2024,
-        "sourceUrl": "https://bgm.tv/subject/497026"
+        "sourceUrl": "https://bgm.tv/subject/497026",
+        "episodeCount": 52
       },
       {
         "n": 4,
         "label": "第四季",
         "title": "师兄啊师兄 年番2",
         "year": 2025,
-        "sourceUrl": "https://bgm.tv/subject/516416"
+        "sourceUrl": "https://bgm.tv/subject/516416",
+        "episodeCount": 52
       },
       {
         "n": 5,
         "label": "第五季",
         "title": "师兄啊师兄 最终季",
         "year": 2026,
-        "sourceUrl": "https://bgm.tv/subject/659266"
+        "sourceUrl": "https://bgm.tv/subject/659266",
+        "episodeCount": 26
       }
     ]
   },
@@ -2199,7 +2230,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "从前有座灵剑山 第二季",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/175432"
+        "sourceUrl": "https://bgm.tv/subject/175432",
+        "episodeCount": 12
       }
     ]
   },
@@ -2215,70 +2247,80 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "王权篇",
         "title": "狐妖小红娘 王权篇",
         "year": 2016,
-        "sourceUrl": "https://bgm.tv/subject/281271"
+        "sourceUrl": "https://bgm.tv/subject/281271",
+        "episodeCount": 14
       },
       {
         "n": 3,
         "label": "月红篇",
         "title": "狐妖小红娘 月红篇",
         "year": 2016,
-        "sourceUrl": "https://bgm.tv/subject/281272"
+        "sourceUrl": "https://bgm.tv/subject/281272",
+        "episodeCount": 21
       },
       {
         "n": 4,
         "label": "千颜篇",
         "title": "狐妖小红娘 千颜篇",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/281277"
+        "sourceUrl": "https://bgm.tv/subject/281277",
+        "episodeCount": 15
       },
       {
         "n": 5,
         "label": "南国篇",
         "title": "狐妖小红娘 南国篇",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/281282"
+        "sourceUrl": "https://bgm.tv/subject/281282",
+        "episodeCount": 26
       },
       {
         "n": 6,
         "label": "竹业篇",
         "title": "狐妖小红娘 竹业篇",
         "year": 2019,
-        "sourceUrl": "https://bgm.tv/subject/281283"
+        "sourceUrl": "https://bgm.tv/subject/281283",
+        "episodeCount": 12
       },
       {
         "n": 7,
         "label": "尾生篇",
         "title": "狐妖小红娘 尾生篇",
         "year": 2019,
-        "sourceUrl": "https://bgm.tv/subject/282634"
+        "sourceUrl": "https://bgm.tv/subject/282634",
+        "episodeCount": 10
       },
       {
         "n": 8,
         "label": "金晨曦篇",
         "title": "狐妖小红娘 金晨曦篇",
         "year": 2020,
-        "sourceUrl": "https://bgm.tv/subject/282635"
+        "sourceUrl": "https://bgm.tv/subject/282635",
+        "episodeCount": 10
       },
       {
         "n": 9,
         "label": "沐天城篇",
         "title": "狐妖小红娘 沐天城篇",
         "year": 2020,
-        "sourceUrl": "https://bgm.tv/subject/309937"
+        "sourceUrl": "https://bgm.tv/subject/309937",
+        "episodeCount": 12
       },
       {
         "n": 10,
         "label": "两生花篇",
         "title": "狐妖小红娘 两生花篇",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/328707"
+        "sourceUrl": "https://bgm.tv/subject/328707",
+        "episodeCount": 12
       },
       {
         "n": 11,
         "label": "无暮篇",
         "title": "狐妖小红娘 无暮篇",
         "year": 2023,
-        "sourceUrl": "https://bgm.tv/subject/345761"
+        "sourceUrl": "https://bgm.tv/subject/345761",
+        "episodeCount": 12
       },
       {
         "n": 12,
@@ -2306,7 +2348,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "妖怪名单 第二季",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/146181"
+        "sourceUrl": "https://bgm.tv/subject/146181",
+        "episodeCount": 20
       }
     ]
   },
@@ -2320,14 +2363,16 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "果宝特攻 第二季",
         "year": 2012,
-        "sourceUrl": "https://bgm.tv/subject/187101"
+        "sourceUrl": "https://bgm.tv/subject/187101",
+        "episodeCount": 52
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "果宝特攻 第三季",
         "year": 2014,
-        "sourceUrl": "https://bgm.tv/subject/187102"
+        "sourceUrl": "https://bgm.tv/subject/187102",
+        "episodeCount": 52
       },
       {
         "n": 4,
@@ -2349,112 +2394,128 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "武侠2008",
         "title": "猪猪侠之武侠2008",
         "year": 2007,
-        "sourceUrl": "https://bgm.tv/subject/187084"
+        "sourceUrl": "https://bgm.tv/subject/187084",
+        "episodeCount": 40
       },
       {
         "n": 3,
         "label": "勇闯未来之城",
         "title": "猪猪侠勇闯未来之城",
         "year": 2008,
-        "sourceUrl": "https://bgm.tv/subject/208066"
+        "sourceUrl": "https://bgm.tv/subject/208066",
+        "episodeCount": 40
       },
       {
         "n": 4,
         "label": "百变猪猪侠",
         "title": "百变猪猪侠",
         "year": 2009,
-        "sourceUrl": "https://bgm.tv/subject/208067"
+        "sourceUrl": "https://bgm.tv/subject/208067",
+        "episodeCount": 80
       },
       {
         "n": 5,
         "label": "积木世界的童话故事",
         "title": "猪猪侠之积木世界的童话故事",
         "year": 2010,
-        "sourceUrl": "https://bgm.tv/subject/208068"
+        "sourceUrl": "https://bgm.tv/subject/208068",
+        "episodeCount": 52
       },
       {
         "n": 6,
         "label": "幸福救援队",
         "title": "猪猪侠之幸福救援队",
         "year": 2013,
-        "sourceUrl": "https://bgm.tv/subject/208069"
+        "sourceUrl": "https://bgm.tv/subject/208069",
+        "episodeCount": 52
       },
       {
         "n": 7,
         "label": "变身小英雄",
         "title": "猪猪侠之变身小英雄",
         "year": 2013,
-        "sourceUrl": "https://bgm.tv/subject/208070"
+        "sourceUrl": "https://bgm.tv/subject/208070",
+        "episodeCount": 52
       },
       {
         "n": 8,
         "label": "变身战队",
         "title": "猪猪侠之变身战队",
         "year": 2014,
-        "sourceUrl": "https://bgm.tv/subject/208071"
+        "sourceUrl": "https://bgm.tv/subject/208071",
+        "episodeCount": 52
       },
       {
         "n": 9,
         "label": "百变联盟",
         "title": "猪猪侠之百变联盟",
         "year": 2015,
-        "sourceUrl": "https://bgm.tv/subject/208072"
+        "sourceUrl": "https://bgm.tv/subject/208072",
+        "episodeCount": 52
       },
       {
         "n": 10,
         "label": "五灵守卫者",
         "title": "猪猪侠之五灵守卫者",
         "year": 2015,
-        "sourceUrl": "https://bgm.tv/subject/208073"
+        "sourceUrl": "https://bgm.tv/subject/208073",
+        "episodeCount": 52
       },
       {
         "n": 11,
         "label": "光明守卫者",
         "title": "猪猪侠之光明守卫者",
         "year": 2016,
-        "sourceUrl": "https://bgm.tv/subject/208074"
+        "sourceUrl": "https://bgm.tv/subject/208074",
+        "episodeCount": 52
       },
       {
         "n": 12,
         "label": "梦想守卫者",
         "title": "猪猪侠之梦想守卫者",
         "year": 2016,
-        "sourceUrl": "https://bgm.tv/subject/208076"
+        "sourceUrl": "https://bgm.tv/subject/208076",
+        "episodeCount": 52
       },
       {
         "n": 13,
         "label": "超星萌宠",
         "title": "猪猪侠之超星萌宠",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/384732"
+        "sourceUrl": "https://bgm.tv/subject/384732",
+        "episodeCount": 26
       },
       {
         "n": 14,
         "label": "竞球小英雄",
         "title": "猪猪侠之竞球小英雄",
         "year": 2018,
-        "sourceUrl": "https://bgm.tv/subject/246981"
+        "sourceUrl": "https://bgm.tv/subject/246981",
+        "episodeCount": 26
       },
       {
         "n": 15,
         "label": "竞速小英雄",
         "title": "猪猪侠之竞速小英雄",
         "year": 2019,
-        "sourceUrl": "https://bgm.tv/subject/384748"
+        "sourceUrl": "https://bgm.tv/subject/384748",
+        "episodeCount": 26
       },
       {
         "n": 16,
         "label": "深海小英雄",
         "title": "猪猪侠之深海小英雄",
         "year": 2020,
-        "sourceUrl": "https://bgm.tv/subject/384757"
+        "sourceUrl": "https://bgm.tv/subject/384757",
+        "episodeCount": 26
       },
       {
         "n": 17,
         "label": "超星五灵侠",
         "title": "猪猪侠之超星五灵侠",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/384726"
+        "sourceUrl": "https://bgm.tv/subject/384726",
+        "episodeCount": 26
       },
       {
         "n": 18,
@@ -2476,7 +2537,8 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "动画版续集",
         "title": "火力少年王3 动画版续集",
         "year": 2011,
-        "sourceUrl": "https://bgm.tv/subject/148705"
+        "sourceUrl": "https://bgm.tv/subject/148705",
+        "episodeCount": 26
       }
     ]
   },
@@ -2490,119 +2552,136 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "开心宝贝之开心超人",
         "year": 2011,
-        "sourceUrl": "https://bgm.tv/subject/320413"
+        "sourceUrl": "https://bgm.tv/subject/320413",
+        "episodeCount": 52
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "开心宝贝之开心超人大作战",
         "year": 2011,
-        "sourceUrl": "https://bgm.tv/subject/320414"
+        "sourceUrl": "https://bgm.tv/subject/320414",
+        "episodeCount": 52
       },
       {
         "n": 4,
         "label": "第四季",
         "title": "开心宝贝之开心大冒险",
         "year": 2012,
-        "sourceUrl": "https://bgm.tv/subject/320415"
+        "sourceUrl": "https://bgm.tv/subject/320415",
+        "episodeCount": 52
       },
       {
         "n": 5,
         "label": "第五季",
         "title": "开心宝贝之开心星星球",
         "year": 2012,
-        "sourceUrl": "https://bgm.tv/subject/320416"
+        "sourceUrl": "https://bgm.tv/subject/320416",
+        "episodeCount": 52
       },
       {
         "n": 6,
         "label": "第六季",
         "title": "开心宝贝之古灵星历险记",
         "year": 2013,
-        "sourceUrl": "https://bgm.tv/subject/320417"
+        "sourceUrl": "https://bgm.tv/subject/320417",
+        "episodeCount": 52
       },
       {
         "n": 7,
         "label": "第七季",
         "title": "开心宝贝之开心联盟争霸战",
         "year": 2014,
-        "sourceUrl": "https://bgm.tv/subject/320418"
+        "sourceUrl": "https://bgm.tv/subject/320418",
+        "episodeCount": 52
       },
       {
         "n": 8,
         "label": "第八季",
         "title": "开心宝贝之奇幻之旅",
         "year": 2014,
-        "sourceUrl": "https://bgm.tv/subject/320419"
+        "sourceUrl": "https://bgm.tv/subject/320419",
+        "episodeCount": 40
       },
       {
         "n": 9,
         "label": "第九季",
         "title": "开心超人联盟之超时空保卫战",
         "year": 2015,
-        "sourceUrl": "https://bgm.tv/subject/320420"
+        "sourceUrl": "https://bgm.tv/subject/320420",
+        "episodeCount": 52
       },
       {
         "n": 10,
         "label": "第十季",
         "title": "开心超人联盟之英雄归来",
         "year": 2016,
-        "sourceUrl": "https://bgm.tv/subject/320421"
+        "sourceUrl": "https://bgm.tv/subject/320421",
+        "episodeCount": 52
       },
       {
         "n": 11,
         "label": "第十一季",
         "title": "开心超人联盟之星际危机",
         "year": 2017,
-        "sourceUrl": "https://bgm.tv/subject/320422"
+        "sourceUrl": "https://bgm.tv/subject/320422",
+        "episodeCount": 52
       },
       {
         "n": 12,
         "label": "第十二季",
         "title": "开心超人联盟之星际联盟",
         "year": 2019,
-        "sourceUrl": "https://bgm.tv/subject/320423"
+        "sourceUrl": "https://bgm.tv/subject/320423",
+        "episodeCount": 52
       },
       {
         "n": 13,
         "label": "第十三季",
         "title": "开心超人联盟之能源核守护者",
         "year": 2020,
-        "sourceUrl": "https://bgm.tv/subject/320424"
+        "sourceUrl": "https://bgm.tv/subject/320424",
+        "episodeCount": 52
       },
       {
         "n": 14,
         "label": "第十四季",
         "title": "开心超人联盟之星之力",
         "year": 2020,
-        "sourceUrl": "https://bgm.tv/subject/320427"
+        "sourceUrl": "https://bgm.tv/subject/320427",
+        "episodeCount": 52
       },
       {
         "n": 15,
         "label": "第十五季",
         "title": "开心超人联盟之机械堡奇遇记",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/333379"
+        "sourceUrl": "https://bgm.tv/subject/333379",
+        "episodeCount": 52
       },
       {
         "n": 16,
         "label": "第十六季",
         "title": "开心超人联盟之奇幻谜瑞岛",
         "year": 2021,
-        "sourceUrl": "https://bgm.tv/subject/410023"
+        "sourceUrl": "https://bgm.tv/subject/410023",
+        "episodeCount": 26
       },
       {
         "n": 17,
         "label": "第十七季",
         "title": "开心超人联盟之异星迷航",
         "year": 2022,
-        "sourceUrl": "https://bgm.tv/subject/410024"
+        "sourceUrl": "https://bgm.tv/subject/410024",
+        "episodeCount": 26
       },
       {
         "n": 18,
         "label": "第十八季",
         "title": "开心超人联盟之平行时空大冒险",
         "year": 2022,
-        "sourceUrl": "https://bgm.tv/subject/410020"
+        "sourceUrl": "https://bgm.tv/subject/410020",
+        "episodeCount": 52
       },
       {
         "n": 19,
@@ -2630,28 +2709,32 @@ window.LUOBAN_ANIME_SEASONS = [
         "label": "第二季",
         "title": "大耳朵图图 第二季",
         "year": 2008,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34808"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34808",
+        "episodeCount": 26
       },
       {
         "n": 3,
         "label": "第三季",
         "title": "大耳朵图图 第三季",
         "year": 2010,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34809"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34809",
+        "episodeCount": 26
       },
       {
         "n": 4,
         "label": "第四季",
         "title": "大耳朵图图 第四季",
         "year": 2011,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34816"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34816",
+        "episodeCount": 26
       },
       {
         "n": 5,
         "label": "第五季",
         "title": "大耳朵图图 第五季",
         "year": 2015,
-        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34819"
+        "sourceUrl": "https://www.bilibili.com/bangumi/play/ss34819",
+        "episodeCount": 26
       }
     ]
   },

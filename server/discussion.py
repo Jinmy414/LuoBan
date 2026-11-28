@@ -13,6 +13,14 @@ CREATE TABLE IF NOT EXISTS work_comments (
  id TEXT PRIMARY KEY, work_id TEXT NOT NULL, user_id INTEGER NOT NULL, body TEXT NOT NULL, posted INTEGER NOT NULL,
  parent_id TEXT
 );
+CREATE TABLE IF NOT EXISTS comment_likes (
+ work_id TEXT NOT NULL, comment_id TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES accounts(id),
+ PRIMARY KEY(work_id,comment_id,user_id)
+);
+CREATE TRIGGER IF NOT EXISTS remove_deleted_comment_likes AFTER DELETE ON work_comments
+BEGIN
+ DELETE FROM comment_likes WHERE work_id=OLD.work_id AND comment_id=OLD.id;
+END;
 CREATE TABLE IF NOT EXISTS comment_notices (
  recipient INTEGER NOT NULL REFERENCES accounts(id), comment_id TEXT NOT NULL, kind TEXT NOT NULL,
  read_at INTEGER, PRIMARY KEY(recipient,comment_id)
@@ -91,6 +99,22 @@ def mount(app, db, active_user, admin, fail, now, seed_works):
                     return fail("评分须为 0 至 10 分之间的整数或半分。")
                 conn.execute("INSERT INTO work_votes VALUES (?,?,?) ON CONFLICT(work_id,user_id) DO UPDATE SET score=excluded.score",
                              (key, user["id"], score))
+            elif action == "like":
+                comment_id, wanted = data.get("id"), data.get("liked")
+                if not isinstance(comment_id, str) or not 1 <= len(comment_id) <= 250 or type(wanted) is not bool:
+                    return fail("请重新选择要点赞的评论。")
+                seed_comment = seed_comments.get(key, {}).get(comment_id)
+                if not seed_comment and not conn.execute("SELECT 1 FROM work_comments WHERE work_id=? AND id=?",
+                                                         (key, comment_id)).fetchone():
+                    return fail("这条评论已移除，请刷新作品。", 404)
+                params = (key, comment_id, user["id"])
+                if wanted:
+                    conn.execute("INSERT OR IGNORE INTO comment_likes VALUES (?,?,?)", params)
+                else:
+                    conn.execute("DELETE FROM comment_likes WHERE work_id=? AND comment_id=? AND user_id=?", params)
+                count = conn.execute("SELECT COUNT(*) FROM comment_likes WHERE work_id=? AND comment_id=?",
+                                     (key, comment_id)).fetchone()[0]
+                return jsonify(likes=count + (seed_comment or {}).get("likes", 0), likedByMe=wanted)
             elif action == "comment":
                 raw_id, body = data.get("id"), data.get("text")
                 if not isinstance(raw_id, str) or not re.fullmatch(r"[a-f0-9-]{36}", raw_id):
@@ -135,7 +159,7 @@ def mount(app, db, active_user, admin, fail, now, seed_works):
                 return fail("没有执行此操作的权限。", 403)
         return jsonify(ok=True)
 
-    def public_activity():
+    def public_activity(viewer_id=None):
         result = {}
         def entry(key):
             return result.setdefault(key, {"comments": [], "commentScores": {}})
@@ -177,6 +201,15 @@ def mount(app, db, active_user, admin, fail, now, seed_works):
             votes[key][original] = r["score"]
         for key, scores in votes.items():
             entry(key).update(votes=len(scores), ratingSum=sum(scores.values()))
+        for r in db().execute("""SELECT work_id,comment_id,COUNT(*) AS total,MAX(user_id=?) AS mine
+                                 FROM comment_likes GROUP BY work_id,comment_id""", (viewer_id,)):
+            key, comment_id = r["work_id"], r["comment_id"]
+            if key in live:
+                activity = entry(key)
+                base = seed_comments.get(key, {}).get(comment_id, {}).get("likes", 0)
+                activity.setdefault("commentLikes", {})[comment_id] = r["total"] + base
+                if r["mine"]:
+                    activity.setdefault("likedByMe", []).append(comment_id)
         return result
 
     return public_activity

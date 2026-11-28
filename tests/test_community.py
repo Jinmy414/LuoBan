@@ -61,6 +61,8 @@ class CommunityTest(unittest.TestCase):
         wish = dict(id=self.data["id"], action="request", title="新剧 第一季", types=["美剧"], region="欧美")
         seeded = self.post("submissions", **{**wish, "title":"《黄石 第０１季》"})
         self.assertEqual((seeded.status_code, seeded.json["workId"]), (409, "yellowstone-s1"))
+        alias = self.post("submissions", **{**wish, "title":"Ａｎｇｅｌ　Ｂｅａｔｓ！"})
+        self.assertEqual((alias.status_code, alias.json["workId"]), (409, "animation-79-Angle20beats"))
         self.assertEqual(self.post("submissions", **wish, requestNote="仅审核可见").status_code, 200)
         self.assertEqual(self.guest.get("/api/works").json["works"], [])
         self.as_user(3)
@@ -275,6 +277,55 @@ class CommunityTest(unittest.TestCase):
         self.assertEqual(self.post("member-invites",username="罗").status_code,409)
         rows = self.client.get("/api/member-invites").json["members"]
         self.assertEqual(next(m for m in rows if m["username"]=="罗")["status"],"claimed")
+
+    def test_comment_likes_shared_across_devices_and_private_per_account(self):
+        key = 'animation-0-E78CABE5928CE88081E9BCA0'
+        comment_id = 'import-comment-' + key + '-%E7%BD%97-0'
+        path = 'discussion/' + key
+        self.as_user(2)
+        def set_like(account, wanted):
+            return self.post(path, action='like', accountId=account, id=comment_id, liked=wanted)
+        for _ in range(2):
+            self.assertEqual(set_like(2, True).json, dict(likes=1, likedByMe=True))
+        device = self.app.test_client()
+        device.set_cookie(COOKIE, '2')
+        viewer = device.get('/api/works')
+        self.assertEqual(viewer.json['viewerId'], 2)
+        self.assertEqual(viewer.json['discussion'][key]['likedByMe'], [comment_id])
+        self.assertIn('Cookie', viewer.headers['Vary'])
+        self.assertIn('no-store', viewer.headers['Cache-Control'])
+        public = self.guest.get('/api/works').json
+        self.assertIsNone(public['viewerId'])
+        self.assertNotIn('likedByMe', public['discussion'][key])
+        self.assertEqual(public['discussion'][key]['commentLikes'], {comment_id:1})
+        self.as_user(3)
+        self.assertNotIn('likedByMe', self.client.get('/api/works').json['discussion'][key])
+        self.assertEqual(set_like(2, False).status_code, 401)
+        self.assertEqual(set_like(3, True).json['likes'], 2)
+        self.assertEqual(set_like(3, 1).status_code, 400)
+        for _ in range(2):
+            self.assertEqual(set_like(3, False).json, dict(likes=1, likedByMe=False))
+        self.assertEqual(device.get('/api/works').json['discussion'][key]['likedByMe'], [comment_id])
+        self.assertEqual(self.guest.post('/api/' + path, json=dict(action='like', accountId=2, id=comment_id, liked=False),
+            headers={'Origin':'https://example.test'}).status_code, 401)
+
+    def test_likes_validate_and_follow_shared_comment_deletion(self):
+        key = 'yellowstone-s1'
+        path = 'discussion/' + key
+        self.as_user(2)
+        self.assertEqual(self.post(path, action='comment', id='d'*36, text='观后感', accountId=2).status_code, 200)
+        comment_id = 'c-2-' + 'd'*36
+        self.as_user(3)
+        payload = dict(action='like', accountId=3, id=comment_id, liked=True)
+        self.assertEqual(self.post('discussion/yellowstone-s2', **payload).status_code, 404)
+        self.assertEqual(self.post('discussion/missing', **payload).status_code, 404)
+        self.assertEqual(self.post(path, **payload).json['likes'], 1)
+        self.as_user(1)
+        self.assertEqual(self.post(path, action='remove', accountId=1, id=comment_id).status_code, 200)
+        self.as_user(3)
+        self.assertEqual(self.post(path, **payload).status_code, 404)
+        with closing(sqlite3.connect(self.path)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM comment_likes").fetchone()[0], 0)
 
     def test_playback_history_is_private_and_deduplicated(self):
         from server.app import ROOT

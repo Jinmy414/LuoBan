@@ -6,25 +6,94 @@ function commentScoreBadge(work, name, saved) {
   const value = workCommentScore(work, name, saved);
   return value === null ? '' : `<span class="comment-score" aria-label="对本作的评分：${value} 分">${value} 分</span>`;
 }
+let commentLikeRevision = 0;
+let commentLikeAccount = null;
+let loadedLikeAccount = null;
+let myCommentLikes = new Set();
+let initialCommentLikes;
+
+function commentLikeKey(workId, commentId) {
+  return workId + '/' + commentId;
+}
+
+function resetCommentLikeSession(id) {
+  const accountId = id ?? null;
+  if (commentLikeAccount === accountId) return;
+  commentLikeAccount = accountId;
+  loadedLikeAccount = null;
+  lastDiscussion = null;
+  myCommentLikes.clear();
+  queueMicrotask(() => {
+    if (commentLikeAccount === accountId) refreshPublished();
+  });
+}
+
+async function changeCommentLike(button) {
+  const user = currentUser();
+  if (!user) { openAuth('login'); return; }
+  if (button.disabled) return;
+  const {likeComment:workId, commentId} = button.dataset;
+  const key = commentLikeKey(workId, commentId);
+  button.disabled = true;
+  try {
+    if (loadedLikeAccount !== user.accountId) await refreshPublished(false);
+    if (currentUser() !== user) return;
+    if (loadedLikeAccount !== user.accountId) throw Error('点赞状态未同步，请重试。');
+    const data = await accountRequest('discussion/' + encodeURIComponent(workId), {
+      accountId:user.accountId, action:'like', id:commentId, liked:!myCommentLikes.has(key)
+    });
+    if (currentUser() !== user) return;
+    commentLikeRevision++;
+    lastDiscussion = null;
+    if (data.likedByMe) myCommentLikes.add(key);
+    else myCommentLikes.delete(key);
+    const comment = getWork(workId)?.comments.find(c => c.id === commentId);
+    if (comment) comment.likes = data.likes;
+    const selector = `[data-like-comment="${CSS.escape(workId)}"][data-comment-id="${CSS.escape(commentId)}"]`;
+    const visibleButton = document.querySelector(selector);
+    if (visibleButton) {
+      const focused = document.activeElement === visibleButton;
+      refreshDetailContent();
+      if (focused) document.querySelector(selector)?.focus({preventScroll:true});
+    }
+  } catch (error) {
+    if (currentUser() === user) showToast(error.message);
+  } finally {
+    if (button.isConnected) button.disabled = false;
+  }
+}
 function detailCommentMarkup(work, c, user) {
   const id = escapeHTML(c.id), workId = escapeHTML(work.id);
   const parent = c.replyTo;
   const quote = parent ? `<blockquote class="reply-quote">回复 ${memberLink(parent.user,parent.authorId)}<p>${escapeHTML(parent.text)}</p></blockquote>` : '';
   const canReply = c.sharedComment || c.id.startsWith('import-comment-');
+  const liked = Boolean(user && user.accountId === loadedLikeAccount && myCommentLikes.has(commentLikeKey(work.id, c.id)));
   return `<article class="detail-comment" data-discussion-id="${id}"><div class="detail-comment-top"><div class="comment-byline">${memberLink(c.user,c.authorId)}${commentScoreBadge(work,c.user)}</div><span class="comment-date">${escapeHTML(c.date)}</span></div>
-    ${quote}<p>${escapeHTML(c.text)}</p><div class="comment-actions"><button class="like-button ${user && c.likedBy?.includes(user.username) ? 'is-liked' : ''}" type="button" data-like-comment="${workId}" data-comment-id="${id}">♥ ${c.likes || 0}</button>
+    ${quote}<p>${escapeHTML(c.text)}</p><div class="comment-actions">${canReply ? `<button class="like-button ${liked ? 'is-liked' : ''}" type="button" aria-label="赞，${c.likes || 0} 人点赞" aria-pressed="${liked}" data-like-comment="${workId}" data-comment-id="${id}">♥ ${c.likes || 0}</button>` : ''}
     ${canReply ? `<button class="reply-action" type="button" data-reply-comment="${id}">回复</button>` : ''}
     ${isAdmin(user) ? `<button class="button button-danger button-small comment-delete" type="button" data-delete-comment="${workId}" data-comment-id="${id}">删除评论</button>` : ''}</div></article>`;
 }
 
-function mergeDiscussion(activity) {
+function mergeDiscussion(activity, viewerId = null) {
+  if (!initialCommentLikes) {
+    initialCommentLikes = new Map();
+    for (const work of SEED_WORKS) {
+      for (const comment of work.comments) {
+        if (comment.likes) initialCommentLikes.set(commentLikeKey(work.id, comment.id), comment.likes);
+      }
+    }
+  }
+  const nextLikes = new Set();
   for (const work of state.works) {
     const data = activity[work.id];
-    const old = new Map(work.comments.filter(c => c.sharedComment).map(c => [c.id,c]));
-    if (old.size || data?.comments.length) {
-      work.comments = work.comments.filter(c => !c.sharedComment).concat((data?.comments || []).map(c => ({
-        ...c, likes:old.get(c.id)?.likes || 0, likedBy:old.get(c.id)?.likedBy || []
-      })));
+    work.comments = work.comments.filter(c => !c.sharedComment).concat(data?.comments || []);
+    for (const c of work.comments) {
+      // Older clients kept mutable usernames locally; only explicit account-bound votes are shared.
+      delete c.likedBy;
+      c.likes = data?.commentLikes?.[c.id] ?? initialCommentLikes.get(commentLikeKey(work.id, c.id)) ?? 0;
+    }
+    if (viewerId && viewerId === commentLikeAccount) {
+      for (const commentId of data?.likedByMe || []) nextLikes.add(commentLikeKey(work.id, commentId));
     }
     work.commentScores = data?.commentScores || {};
     if (data?.votes !== undefined) {
@@ -33,6 +102,8 @@ function mergeDiscussion(activity) {
       work.rating = data.votes ? data.ratingSum / data.votes : null;
     }
   }
+  myCommentLikes = nextLikes;
+  loadedLikeAccount = viewerId === commentLikeAccount ? viewerId : null;
 }
 
 document.addEventListener('click', event => {

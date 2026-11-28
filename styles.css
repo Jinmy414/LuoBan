@@ -385,6 +385,14 @@ button:disabled { opacity: .55; cursor: default; }
 .work-cover.has-image .cover-symbol,.work-cover.has-image .cover-title,.work-cover.has-image::after,.work-cover.has-image::before { display: none; }
 .feature-info strong,.work-card .feature-info strong { color: var(--text); font-size: 14px; font-weight: 650; }
 .feature-meta,.work-card .feature-meta { font-size: 11px; color: var(--muted); }
+.card-playback {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.card-playback[hidden] { display: none; }
 .works-grid { grid-template-columns: repeat(6,minmax(0,1fr)); gap: 23px 17px; }
 .type-tag { border-radius: 6px; color: #336a54; }
 .button,.select-compact { border-radius: 12px; }

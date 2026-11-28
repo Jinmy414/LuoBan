@@ -17,6 +17,10 @@ CREATE TABLE IF NOT EXISTS episode_progress (
  user_id INTEGER NOT NULL, work_id TEXT NOT NULL, source TEXT NOT NULL, label TEXT NOT NULL,
  seconds INTEGER NOT NULL, PRIMARY KEY(user_id,work_id)
 );
+CREATE TABLE IF NOT EXISTS episode_opens (
+ user_id INTEGER NOT NULL, work_id TEXT NOT NULL, source TEXT NOT NULL, label TEXT NOT NULL,
+ PRIMARY KEY(user_id,work_id)
+);
 CREATE TABLE IF NOT EXISTS installed_episode_lines (
  work_id TEXT NOT NULL, source TEXT NOT NULL, PRIMARY KEY(work_id,source)
 );
@@ -38,6 +42,7 @@ EMBED_URLS = {
     "youtube": re.compile(r"https://www\.youtube\.com/embed/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?"),
 }
 HISTORY_MARKER = "luoban:episodes"
+OPEN_MARKER = "luoban:episode-opened"
 
 
 def valid_hls_url(value):
@@ -147,11 +152,59 @@ def install_catalogues(conn, path):
             if old and old[0].startswith("seed:"):
                 conn.execute("DELETE FROM episode_lines WHERE work_id=? AND source=?", key)
                 conn.execute("DELETE FROM episode_progress WHERE work_id=? AND source=?", key)
+                conn.execute("DELETE FROM episode_opens WHERE work_id=? AND source=?", key)
                 conn.execute("DELETE FROM installed_episode_lines WHERE work_id=? AND source=?", key)
         conn.execute("INSERT OR REPLACE INTO episode_bundle VALUES (1,?)", (digest,))
 
 
-def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
+def episode_summary(labels):
+    episodes, issues, collections, other = {}, set(), 0, 0
+    for label in labels:
+        episode = re.fullmatch(r"第(\d+)集([上下]?)", label)
+        issue = re.fullmatch(r"第(\d+)期(?:[上下])?", label)
+        if episode:
+            episodes.setdefault(int(episode[1]), set()).add(episode[2])
+        elif issue:
+            issues.add(int(issue[1]))
+        elif "合集" in label or "合辑" in label:
+            collections += 1
+        else:
+            other += 1
+    counts = {"episodes": len(episodes), "issues": len(issues), "collections": collections, "other": other}
+    summary = {key: value for key, value in counts.items() if value}
+    if (episodes and set(episodes) == set(range(1, len(episodes) + 1))
+            and all("" in parts or parts == {"上", "下"} for parts in episodes.values())):
+        summary["sequential"] = True
+    return summary
+
+
+def mount(app, db, active_user, admin, now, fail, seed_ids, official_links, static_platform_ids):
+    cached_lines = (None, {})
+
+    @app.get("/api/playback-summary")
+    def playback_summary():
+        nonlocal cached_lines
+        conn = db()
+        revisions = tuple(tuple(r) for r in conn.execute(
+            "SELECT work_id,source,revision FROM episode_lines ORDER BY work_id,source"))
+        if revisions != cached_lines[0]:
+            labels = {}
+            providers = {}
+            for key, source, entries in conn.execute("SELECT work_id,source,episodes FROM episode_lines"):
+                labels.setdefault(key, set()).update(e["label"] for e in json.loads(entries))
+                providers.setdefault(key, set()).add(source)
+            summaries = {key: episode_summary(group) for key, group in labels.items()}
+            for key, sources in providers.items():
+                if sources == {"youtube"}:
+                    summaries[key]["youtubeOnly"] = True
+            cached_lines = (revisions, summaries)
+        works = dict(cached_lines[1])
+        platforms = set(static_platform_ids)
+        platforms.update(key for key, in conn.execute("SELECT work_id FROM playback_overrides WHERE url!=''"))
+        platforms.update(key for key, in conn.execute(
+            "SELECT id FROM contributions WHERE json_extract(live,'$.playbackUrl')!=''"))
+        return jsonify(works=works, platforms=sorted(platforms - works.keys()))
+
     def published(key):
         return key in seed_ids or db().execute(
             "SELECT 1 FROM contributions WHERE id=? AND live IS NOT NULL", (key,)).fetchone() is not None
@@ -167,7 +220,10 @@ def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
                           episodes=json.loads(r["episodes"])) for r in rows]
             progress = db().execute("SELECT source,label,seconds FROM episode_progress WHERE user_id=? AND work_id=?",
                                     (user["id"], key)).fetchone() if user else None
-            payload = dict(lines=lines, progress=dict(progress) if progress else None,
+            opened = db().execute("""SELECT o.source,o.label FROM episode_opens o JOIN watch_history h
+                USING (user_id,work_id) WHERE user_id=? AND work_id=? AND h.url=?""",
+                                  (user["id"], key, OPEN_MARKER)).fetchone() if user else None
+            payload = dict(lines=lines, progress=dict(progress) if progress else None, lastOpened=dict(opened) if opened else None,
                            officialLinks=official_links(key))
             if admin(user):
                 payload["providers"] = [dict(id=k, name=v[0], host=v[1]) for k,v in SOURCES.items()]
@@ -188,6 +244,7 @@ def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
             if data.get("action") == "remove":
                 conn.execute("DELETE FROM episode_lines WHERE work_id=? AND source=?", (key, source))
                 conn.execute("DELETE FROM episode_progress WHERE work_id=? AND source=?", (key,source))
+                conn.execute("DELETE FROM episode_opens WHERE work_id=? AND source=?", (key,source))
             else:
                 try:
                     title, body = validated_catalogue(data, source)
@@ -207,14 +264,29 @@ def mount(app, db, active_user, admin, now, fail, seed_ids, official_links):
             if not user or data.get("accountId") != user["id"]:
                 return fail("登录后可以同步观看进度。", 401)
             source, label, seconds = data.get("source"), data.get("label"), data.get("seconds")
-            if not isinstance(source, str) or not isinstance(label, str) or type(seconds) is not int or not 0 <= seconds <= 604800:
+            opened = data.get("kind") == "opened" or (seconds == 0 and isinstance(source, str) and source in EMBED_URLS)
+            if (not isinstance(source, str) or not isinstance(label, str)
+                    or (opened and (source not in EMBED_URLS or seconds not in (None, 0)))
+                    or (not opened and (type(seconds) is not int or not 0 <= seconds <= 604800))):
                 return fail("分集或观看进度有误。")
             line = conn.execute("SELECT revision,episodes FROM episode_lines WHERE work_id=? AND source=?", (key,source)).fetchone()
             if not line or line["revision"] != data.get("revision") or not any(e["label"] == label for e in json.loads(line["episodes"])):
                 return fail("线路已更新，请重新打开作品。", 409)
-            conn.execute("""INSERT INTO episode_progress VALUES (?,?,?,?,?) ON CONFLICT(user_id,work_id) DO UPDATE SET
+            if not opened and seconds == 0:
+                # Older native players posted zero as soon as the playing event fired.
+                return jsonify(ok=True)
+            marker = HISTORY_MARKER
+            if opened:
+                conn.execute("""INSERT INTO episode_opens VALUES (?,?,?,?) ON CONFLICT(user_id,work_id) DO UPDATE SET
+                                source=excluded.source,label=excluded.label""", (user["id"],key,source,label))
+                previous = conn.execute("""SELECT 1 FROM episode_progress
+                    WHERE user_id=? AND work_id=? AND label=? AND seconds>0""", (user["id"],key,label)).fetchone()
+                if not previous:
+                    marker = OPEN_MARKER
+            else:
+                conn.execute("""INSERT INTO episode_progress VALUES (?,?,?,?,?) ON CONFLICT(user_id,work_id) DO UPDATE SET
                             source=excluded.source,label=excluded.label,seconds=excluded.seconds""",
-                         (user["id"],key,source,label,seconds))
+                             (user["id"],key,source,label,seconds))
             conn.execute("""INSERT INTO watch_history VALUES (?,?,?,?) ON CONFLICT(user_id,work_id)
-                            DO UPDATE SET url=excluded.url,opened=excluded.opened""", (user["id"],key,HISTORY_MARKER,now()))
+                            DO UPDATE SET url=excluded.url,opened=excluded.opened""", (user["id"],key,marker,now()))
         return jsonify(ok=True)

@@ -121,3 +121,77 @@ async function saveShowcase(user, changes) {
   if (currentUser() !== user) throw Error('请重新登录后再保存。');
   applyShowcase(user, await accountRequest('member-showcase', {accountId:user.accountId, ...changes}));
 }
+
+let pendingWatchlistWrite = Promise.resolve();
+function setWatchlistEntry(user, id, wanted) {
+  const write = pendingWatchlistWrite.then(() => {
+    if (currentUser() !== user) throw Error('账号已切换，请重新打开作品。');
+    return accountRequest('watchlist', {accountId:user.accountId, id, wanted});
+  });
+  pendingWatchlistWrite = write.catch(() => {});
+  return write;
+}
+
+function showWatchlistButton(button, wanted) {
+  delete button.dataset.watchlistRetry;
+  button.setAttribute('aria-pressed', String(wanted));
+  button.classList.toggle('button-coral', wanted);
+  button.classList.toggle('button-ghost', !wanted);
+  button.textContent = wanted ? '✓ 已想看' : '＋ 想看';
+}
+
+let watchlistButtonRead = 0;
+async function refreshWatchlistButton() {
+  const button = document.querySelector('button[data-watchlist]');
+  if (!button) return;
+  const read = ++watchlistButtonRead, user = currentUser();
+  if (!user) {
+    showWatchlistButton(button, false);
+    button.disabled = false;
+    return;
+  }
+  button.disabled = true;
+  const current = () => read === watchlistButtonRead && button.isConnected && currentUser() === user;
+  try {
+    await pendingWatchlistWrite;
+    const data = await accountRequest('watchlist?id=' + encodeURIComponent(button.dataset.watchlist));
+    if (current()) showWatchlistButton(button, data.wanted);
+  } catch {
+    if (current()) {
+      button.dataset.watchlistRetry = 'true';
+      button.textContent = '重试读取想看状态';
+    }
+  } finally {
+    if (current()) button.disabled = false;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentUser() && document.querySelector('button[data-watchlist]:not(:disabled)'))
+    refreshWatchlistButton();
+});
+
+document.addEventListener('click', async event => {
+  const button = event.target.closest('button[data-watchlist]');
+  if (!button || button.disabled) return;
+  const user = currentUser();
+  if (!user) { openAuth('login'); return; }
+  if (button.dataset.watchlistRetry) { refreshWatchlistButton(); return; }
+  const wanted = button.getAttribute('aria-pressed') !== 'true';
+  ++watchlistButtonRead;
+  button.disabled = true;
+  try {
+    await setWatchlistEntry(user, button.dataset.watchlist, wanted);
+    if (button.isConnected && currentUser() === user) {
+      showWatchlistButton(button, wanted);
+      showToast(wanted ? '已加入想看清单' : '已从想看清单移除');
+    }
+  } catch (error) {
+    if (button.isConnected && currentUser() === user) {
+      showToast(error.message);
+      await refreshWatchlistButton();
+    }
+  } finally {
+    if (button.isConnected && currentUser() === user) button.disabled = false;
+  }
+});

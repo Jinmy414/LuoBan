@@ -1,32 +1,6 @@
 // Profile sheets, work submissions and review share the same published catalogue.
 const posterNames = { mint: '青苔绿', dusk: '晚霞橘', sky: '晴空蓝', lavender: '雾紫色', lemon: '柠檬黄', ink: '墨夜蓝' };
 const submissionStatus = {pending: '待审核', approved: '已发布', rejected: '已退回'};
-let avatarRevision = 0;
-let publishedRevision = 0;
-let lastDiscussion = null;
-let playbackOverrides = {};
-
-function avatarURL(name) {
-  return 'api/avatars/' + encodeURIComponent(name) + '?v=' + avatarRevision;
-}
-function closeStudioDialogs() {
-  document.querySelectorAll('.studio-dialog[open]').forEach(dialog => dialog.close());
-}
-function profileComments(user) {
-  const username = user.username;
-  const local = state.works.flatMap(work => work.comments.filter(c => c.authorId ? c.authorId === user.accountId : c.user === username)
-    .map(comment => ({...comment, work, key: work.id + ':' + comment.id})))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const remote = (user.featuredComments || []).map(c => ({
-    ...c, work:getWork(c.workId), key:c.workId + ':' + c.id, likes:0
-  })).filter(c => c.work && !local.some(item => item.key === c.key));
-  return [...local, ...remote];
-}
-function thumb(work) {
-  const url = safeImage(work.coverImage);
-  return url ? `<img class="studio-thumb" src="${escapeHTML(url)}" alt="" loading="lazy">`
-    : `<span class="studio-thumb initial" aria-hidden="true">${escapeHTML(work.title.slice(0, 1))}</span>`;
-}
 function profileTool(kind, label) {
   return `<button type="button" class="studio-action" data-profile-tool="${kind}">${label}</button>`;
 }
@@ -40,30 +14,14 @@ function renderProfile() {
     <div class="profile-banner"><img class="identity-image" src="${avatarURL(user.username)}" alt=""><div><h1>我的罗瓣</h1>
       <p>${escapeHTML(user.username)} · 收到 ${allComments.reduce((sum, c) => sum + c.likes, 0)} 个赞</p></div>${profileTool('account','编辑个人信息')}</div>
     <a class="public-profile-link" href="${memberHref(user.username, user.accountId)}">查看我的公开主页 ›</a>
+    <section class="studio-panel"><div class="panel-heading"><h2 id="historyTitle">继续观看</h2><small>仅自己可见</small></div><div id="watchHistory" aria-live="polite">正在读取观看记录…</div></section>
+    <section class="studio-panel"><div class="panel-heading"><h2>想看清单</h2><small>仅自己可见</small></div><div id="privateWatchlist" aria-live="polite">正在读取想看清单…</div></section>
     <section class="studio-panel"><div class="panel-heading"><div><h2>三部最爱</h2><p>${favorites.length} / 3 部</p></div>${profileTool('favorites','选择最爱')}</div>
     <div class="favorite-shelf">${favorites.map(work => workCard(work, true)).join('')}${favorites.length < 3 ? '<button class="favorite-slot" type="button" data-profile-tool="favorites"><span aria-hidden="true">♡</span>添加最爱作品</button>' : ''}</div></section>
-    <section class="studio-panel"><div class="panel-heading"><h2>观看记录</h2><small>仅自己可见</small></div><div id="watchHistory">正在读取…</div></section>
     <div class="profile-columns"><section class="studio-panel"><div class="panel-heading"><h2>展示评论</h2>${profileTool('comments','选择评论')}</div>${comments.map(c => `<article class="profile-quote">${commentScoreBadge(c.work,user.username,c.score)}<p>${escapeHTML(c.text)}</p><a href="#work-${escapeHTML(c.work.id)}">《${escapeHTML(c.work.title)}》</a></article>`).join('') || '<p class="studio-empty">还没有展示评论。</p>'}</section>
     <section class="studio-panel"><div class="panel-heading"><h2>我的上线申请</h2><a class="studio-action" href="#create">期待上线</a></div>
     <div id="mySubmissions" aria-live="polite">正在读取申请…</div>
     ${created.map(w => `<a class="studio-row" href="#work-${escapeHTML(w.id)}">${thumb(w)}<span>${escapeHTML(w.title)}</span><small>${displayYear(w.year)}</small></a>`).join('')}</section></div></section>`;
-}
-function openSheet(title, content, opener) {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'studio-dialog';
-  const label = 'sheet-' + document.querySelectorAll('.studio-dialog').length;
-  dialog.setAttribute('aria-labelledby', label);
-  dialog.innerHTML = `<div class="sheet-head"><h2 id="${label}">${title}</h2><button class="sheet-close" type="button" aria-label="关闭" data-close>×</button></div>${content}`;
-  document.body.append(dialog);
-  dialog.addEventListener('click', event => {
-    if (event.target.closest('[data-close]')) dialog.close();
-  });
-  dialog.addEventListener('close', () => {
-    dialog.remove();
-    if (opener?.isConnected) opener.focus({preventScroll:true});
-  }, {once:true});
-  dialog.showModal();
-  return dialog;
 }
 function refreshProfileAfterSheet() {
   const profile = document.querySelector('.studio-page .profile-banner');
@@ -87,7 +45,7 @@ function openPicker(kind, opener) {
   const normalize = str => str.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
   function draw() {
     const term = normalize(search.value);
-    const matches = choices.filter(c => normalize(c.label).includes(term));
+    const matches = choices.filter(c => [c.label, ...(c.work.aliases || [])].some(label => normalize(label).includes(term)));
     if (term) matches.sort((a,b) => Number(normalize(b.label).startsWith(term)) - Number(normalize(a.label).startsWith(term)));
     results = matches.slice(0,limit);
     dialog.querySelector('[data-count]').textContent = chosen.size;
@@ -392,41 +350,6 @@ function setupWorkForm(form, original = {}) {
     finally { busy = false; form.querySelectorAll('[type=submit]').forEach(b => b.disabled = false); }
   });
 }
-async function refreshPublished(redraw = true) {
-  const revision = ++publishedRevision;
-  try {
-    const {works, playback = {},memberNames = {}, discussion = {}} = await accountRequest('works');
-    if (revision !== publishedRevision) return;
-    const changedSources = JSON.stringify(playbackOverrides) !== JSON.stringify(playback);
-    playbackOverrides = playback;
-    let renamed = false;
-    for (const work of state.works) {
-      for (const comment of work.comments) {
-        if (Object.hasOwn(memberNames,comment.user)) { comment.user = memberNames[comment.user]; renamed = true; }
-      }
-      for (const [oldName,newName] of Object.entries(memberNames)) {
-        if (Object.hasOwn(work.userRatings || {},oldName)) {
-          work.userRatings[newName] ??= work.userRatings[oldName];
-          delete work.userRatings[oldName]; renamed = true;
-        }
-      }
-    }
-    const prior = state.works.filter(w => w.shared);
-    const discussionKey = JSON.stringify(discussion);
-    const changedDiscussion = discussionKey !== lastDiscussion;
-    if (!changedDiscussion && !changedSources && !renamed && works.length === prior.length && works.every(w => { const old = getWork(w.id); return old?.version === w.version && old.createdBy === w.createdBy && old.authorId === w.authorId; })) return;
-    const merged = works.map(w => {
-      const old = getWork(w.id);
-      return {...{rating:null,votes:0,ratingSum:0,comments:[],userRatings:{}}, ...old, ...w, shared:true,poster:POSTER_OPTIONS[w.poster] || POSTER_OPTIONS.mint};
-    });
-    state.works = [...merged, ...state.works.filter(w => !w.shared)];
-    mergeDiscussion(discussion);
-    lastDiscussion = discussionKey;
-    refreshFeatured();
-    try { saveState(); } catch { /* Published works remain available in memory. */ }
-    if (redraw && !document.querySelector('dialog[open],#workForm,#requestForm,#commentForm:focus-within') && !currentRoute().startsWith('submission-') && !currentRoute().startsWith('review-')) renderApp();
-  } catch { /* Static hosts and offline readers can still browse the local catalogue. */ }
-}
 async function renderEditorRoles(target) {
   function draw(users) {
     target.innerHTML = users.map(user => {
@@ -451,18 +374,10 @@ async function renderEditorRoles(target) {
   } catch (error) { target.textContent = error.message; }
 }
 async function loadStudioSections(route) {
-  const memberArea = document.getElementById('memberArea');
-  if (memberArea) {
-    if (route === 'members') loadMemberDirectory(memberArea);
-    else loadPublicMember(memberArea, route);
-  }
   const history = document.getElementById('watchHistory');
   if (history) loadWatchHistory(history);
-  const play = document.getElementById('playbackLinks');
-  if (play) {
-    const work = seasonPlaybackWork(play.dataset.work);
-    if (work) loadEpisodeAccess(work, play);
-  }
+  const watchlist = document.getElementById('privateWatchlist');
+  if (watchlist) loadPrivateWatchlist(watchlist);
   const roles = document.getElementById('editorRoles');
   if (roles) {
     renderEditorRoles(roles);
@@ -519,15 +434,6 @@ document.addEventListener('click', async event => {
     if (currentUser() === user && opener.isConnected) openPicker(opener.dataset.profileTool,opener);
   }
 });
-window.addEventListener('hashchange', () => {
-  if (/^(home|admin|profile|member-|work-)/.test(currentRoute())) refreshPublished();
-});
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    refreshPublished();
-    if (document.querySelector('#adminQueue,#mySubmissions')) loadStudioSections(currentRoute());
-  }
-});
 async function loadMemberInvites(target) {
   const labels = {available:'未绑定',issued:'已发码',expired:'认领码已过期',claimed:'已绑定'};
   try {
@@ -552,21 +458,140 @@ async function loadMemberInvites(target) {
     };
   } catch (error) { target.textContent = error.message; }
 }
+const privateListMarkup = new WeakMap();
+const incompletePrivateLists = new WeakMap();
+
+function updatePrivateList(target, html) {
+  target.querySelector('[data-private-error]')?.remove();
+  if (privateListMarkup.get(target) === html) return;
+  const expanded = target.querySelector('details')?.open;
+  const focused = target.contains(document.activeElement) ? document.activeElement : null;
+  target.innerHTML = html;
+  privateListMarkup.set(target, html);
+  const details = target.querySelector('details');
+  if (expanded && details) details.open = true;
+  if (focused) {
+    const matching = [...target.querySelectorAll('a,button,summary')].find(el =>
+      (focused.matches('summary') && el.matches('summary')) ||
+      (focused.href && el.href === focused.href) ||
+      (focused.dataset.removeWatchlist && el.dataset.removeWatchlist === focused.dataset.removeWatchlist));
+    matching?.focus({preventScroll:true});
+  }
+}
+
+function privateListError(target, error, retry) {
+  if (!target.isConnected) return;
+  if (!privateListMarkup.has(target)) target.replaceChildren();
+  let notice = target.querySelector('[data-private-error]');
+  if (!notice) {
+    notice = document.createElement('p');
+    notice.dataset.privateError = '';
+    notice.className = 'studio-empty';
+    notice.setAttribute('role', 'status');
+    target.append(notice);
+  }
+  notice.innerHTML = `${escapeHTML(error.message)} <button type="button" class="studio-action">重试</button>`;
+  notice.querySelector('button').onclick = retry;
+}
+
+document.addEventListener('published-works-updated', () => {
+  for (const target of document.querySelectorAll('#privateWatchlist,#watchHistory')) {
+    incompletePrivateLists.get(target)?.();
+  }
+});
+
+let privateListRead = 0;
+async function loadPrivateWatchlist(target) {
+  const user = currentUser(), read = ++privateListRead;
+  const current = () => target.isConnected && currentUser() === user && read === privateListRead;
+  try {
+    await pendingWatchlistWrite;
+    const response = await accountRequest('watchlist');
+    if (!current()) return;
+    let ids = response.workIds;
+    function row(work) {
+      const id = escapeHTML(work.id), title = escapeHTML(work.title);
+      return `<div class="studio-row watchlist-row"><a href="#work-${id}">${thumb(work)}<strong>${title}</strong></a>
+        <button type="button" class="studio-action" data-remove-watchlist="${id}" aria-label="从想看清单移除《${title}》">移除</button></div>`;
+    }
+    function draw() {
+      if (!current()) return;
+      const works = ids.map(getWork).filter(Boolean);
+      if (works.length < ids.length) incompletePrivateLists.set(target, draw);
+      else incompletePrivateLists.delete(target);
+      const more = works.slice(5);
+      let html = works.slice(0,5).map(row).join('') || '<p class="studio-empty">还没有想看的作品。<a class="text-link" href="#home">去发现 ›</a></p>';
+      if (more.length) html += `<details class="history-more"><summary>还有 ${more.length} 部想看</summary>${more.map(row).join('')}</details>`;
+      updatePrivateList(target, html);
+    }
+    draw();
+    target.onclick = async event => {
+      const button = event.target.closest('[data-remove-watchlist]');
+      if (!button || button.disabled || currentUser() !== user) return;
+      const id = button.dataset.removeWatchlist;
+      const index = [...target.querySelectorAll('[data-remove-watchlist]')].indexOf(button);
+      const restoreFocus = document.activeElement === button;
+      button.disabled = true;
+      try {
+        await setWatchlistEntry(user, id, false);
+        if (!target.isConnected || currentUser() !== user) return;
+        if (current()) {
+          ids = ids.filter(key => key !== id);
+          draw();
+        } else {
+          await loadPrivateWatchlist(target);
+        }
+        if (restoreFocus) {
+          const buttons = target.querySelectorAll('[data-remove-watchlist]');
+          (buttons[Math.min(index, buttons.length - 1)] || target.querySelector('a'))?.focus({preventScroll:true});
+        }
+        showToast('已从想看清单移除');
+      } catch (error) {
+        if (button.isConnected && currentUser() === user) { button.disabled = false; showToast(error.message); }
+      }
+    };
+  } catch (error) {
+    if (current()) privateListError(target, error, () => loadPrivateWatchlist(target));
+  }
+}
+
+function watchHistoryLink({item, routeId, work}, featured) {
+  const hasTime = Number.isFinite(item.seconds) && item.seconds > 0;
+  const detail = item.episode ? (hasTime ? item.episode + ' · ' + episodeTime(item.seconds) : '上次打开' + item.episode)
+    : item.platform ? '上次打开了' + item.platform : '上次打开了作品';
+  const when = new Date(item.opened * 1000).toLocaleString('zh-CN', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+  const action = item.episode ? (hasTime ? '继续播放' : '播放这集') : '查看作品';
+  return `<a class="studio-row ${featured ? 'resume-card' : ''}" href="#work-${escapeHTML(routeId)}"
+    ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}
+    <span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(detail)}</small>
+    <small>${escapeHTML(when)}</small></span><b class="row-link">${action} ›</b></a>`;
+}
+
+let historyListRead = 0;
 async function loadWatchHistory(target) {
+  const user = currentUser(), read = ++historyListRead;
+  const current = () => target.isConnected && currentUser() === user && read === historyListRead;
   try {
     await progressWrites;
     const {items} = await accountRequest('history');
-    if (!target.isConnected) return;
-    const rows = items.map(item => {
-      const routeId = animeSeasonById.has(item.id + '-all') && item.episode ? item.id + '-all' : item.id;
-      const work = seasonPlaybackWork(routeId);
-      if (!work) return '';
-      const when = new Date(item.opened * 1000).toLocaleString('zh-CN',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
-      const description = item.episode && item.seconds !== null ? item.episode + ' · ' + episodeTime(item.seconds)
-        : '打开了' + item.platform + (item.episode ? ' · ' + item.episode : '');
-      return `<a class="studio-row" href="#work-${escapeHTML(routeId)}" ${item.episode ? 'data-resume-work="' + escapeHTML(work.id) + '"' : ''}>${thumb(work)}<span><strong>${escapeHTML(work.title)}</strong><small>${escapeHTML(when)} · ${escapeHTML(description)}</small></span><b class="row-link">${item.episode ? '续看' : '查看'} ›</b></a>`;
-    }).filter(Boolean);
-    target.innerHTML = rows.slice(0,5).join('') || '<p class="studio-empty">从作品详情打开播放源后，记录会出现在这里。</p>';
-    if (rows.length > 5) target.insertAdjacentHTML('beforeend',`<details><summary>查看全部 ${rows.length} 部</summary>${rows.slice(5).join('')}</details>`);
-  } catch (error) { target.textContent = error.message; }
+    function draw() {
+      if (!current()) return;
+      const entries = items.flatMap(item => {
+        const routeId = animeSeasonById.has(item.id + '-all') && item.episode ? item.id + '-all' : item.id;
+        const work = seasonPlaybackWork(routeId);
+        return work ? [{item, routeId, work}] : [];
+      });
+      if (entries.length < items.length) incompletePrivateLists.set(target, draw);
+      else incompletePrivateLists.delete(target);
+      const featured = entries.find(entry => entry.item.episode && entry.item.seconds > 0) || entries[0];
+      target.closest('section').querySelector('h2').textContent = !featured || featured.item.seconds > 0 ? '继续观看' : '最近打开';
+      const others = entries.filter(entry => entry !== featured);
+      let html = featured ? watchHistoryLink(featured, true) : '<p class="studio-empty">从作品页开始观看后，可以在这里找到记录。</p>';
+      if (others.length) html += `<details class="history-more"><summary>其他观看记录（${others.length}）</summary>${others.map(entry => watchHistoryLink(entry, false)).join('')}</details>`;
+      updatePrivateList(target, html);
+    }
+    draw();
+  } catch (error) {
+    if (current()) privateListError(target, error, () => loadWatchHistory(target));
+  }
 }

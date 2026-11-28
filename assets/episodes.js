@@ -1,28 +1,5 @@
 let activeEpisodePlayer = null;
 let hlsLibrary;
-let progressWrites = Promise.resolve();
-let requestedResume = null;
-document.addEventListener('click', (event) => {
-  const link = event.target.closest('[data-resume-work]');
-  if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey)
-    requestedResume = link.dataset.resumeWork;
-});
-window.addEventListener('hashchange', () => {
-  const route = currentRoute();
-  if (requestedResume && (!route.startsWith('work-') || seasonPlaybackWork(route.slice(5))?.id !== requestedResume)) requestedResume = null;
-});
-
-function episodeTime(seconds) {
-  const value = Math.max(0, Math.floor(seconds || 0));
-  const hours = Math.floor(value / 3600);
-  const minutes = Math.floor(value / 60) % 60;
-  return (
-    (hours ? hours + ':' + String(minutes).padStart(2, '0') : String(minutes)) +
-    ':' +
-    String(value % 60).padStart(2, '0')
-  );
-}
-
 const episodeEmbedProviders = {
   bilibili: { pattern: /^https:\/\/player\.bilibili\.com\/player\.html\?(?:bvid=BV[0-9A-Za-z]{10}&p=[1-9]\d{0,3}|episodeId=[1-9]\d{0,11})$/, example: 'https://player.bilibili.com/player.html?episodeId=…' },
   youtube: { pattern: /^https:\/\/www\.youtube\.com\/embed\/[0-9A-Za-z_-]{11}(?:\?start=(0|[1-9][0-9]{0,4})&end=([1-9][0-9]{0,4}))?$/, example: 'https://www.youtube.com/embed/视频ID' }
@@ -237,6 +214,28 @@ function loadHlsLibrary() {
   return hlsLibrary;
 }
 
+let youtubeLibrary;
+function loadYouTubeLibrary() {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (!youtubeLibrary) {
+    youtubeLibrary = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      const failed = () => {
+        clearTimeout(timer);
+        script.remove();
+        youtubeLibrary = null;
+        reject(Error('未能连接 YouTube 进度服务。'));
+      };
+      const timer = setTimeout(failed, 12000);
+      window.onYouTubeIframeAPIReady = () => { clearTimeout(timer); resolve(window.YT); };
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.onerror = failed;
+      document.head.appendChild(script);
+    });
+  }
+  return youtubeLibrary;
+}
+
 function stopEpisodePlayer() {
   activeEpisodePlayer?.stop();
   activeEpisodePlayer = null;
@@ -267,6 +266,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   const next = room.querySelector('[data-next]'),
     feedback = room.querySelector('[role=status]');
   const preview = room.querySelector('[data-play-episodes]');
+  const stage = room.querySelector('.episode-stage');
   const playLabel = room.querySelector('[data-play-label]');
   const openEpisode = room.querySelector('[data-open-episode]');
   const lines = catalogue.lines.map((line, index) => ({ ...line, displayName: `信号源${index + 1}` }));
@@ -297,10 +297,12 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   } else {
     room.querySelector('[data-count]').textContent = '已接入 ' + labels.length + ' 集';
   }
+  if (lines.length === 1 && lines[0].source === 'youtube' && !document.querySelector('[data-season-caption]'))
+    room.querySelector('[data-count]').append(' · 需连接 YouTube');
   const nextLabel = next.textContent;
   let missingBeforeNext = '';
   const failed = new Set();
-  let frame, loadTimer;
+  let frame, loadTimer, youtubePlayer, youtubeTimer, clipStart = 0;
   let line,
     entry,
     hls = null,
@@ -318,14 +320,18 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       b.type = 'button';
       b.className = 'studio-action';
       b.textContent = '重试本集';
-      b.onclick = () => start(line, entry.label, Math.floor(video.currentTime) || resume);
+      b.onclick = () => start(line, entry.label, position() || resume);
       feedback.append(' ', b);
     }
   }
+  function position() {
+    const time = frame ? (youtubePlayer?.getCurrentTime?.() ?? 0) - clipStart : video.currentTime;
+    return Number.isFinite(time) ? Math.max(0, Math.floor(time)) : 0;
+  }
   function persist() {
-    if (!hasPlayed || !entry || !accountId || activeAccount?.id !== accountId || attaching || frame) return;
-    const seconds = Math.floor(video.currentTime);
-    if (!Number.isFinite(seconds) || seconds === recorded) return;
+    if (!hasPlayed || !entry || !accountId || activeAccount?.id !== accountId || attaching) return;
+    const seconds = position();
+    if (!seconds || seconds === recorded) return;
     recorded = seconds;
     const data = { accountId, source: line.source, revision: line.revision, label: entry.label, seconds };
     progressWrites = progressWrites
@@ -341,7 +347,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
         if (!response.ok) throw Error();
       })
       .catch(() => {
-        if (!stopped && entry.label === data.label) {
+        if (!stopped && entry.label === data.label && line.source === data.source) {
           recorded = -1;
           report('进度同步失败，仍可继续观看。');
         }
@@ -350,6 +356,10 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   function release() {
     attaching = true;
     clearTimeout(loadTimer);
+    clearInterval(youtubeTimer);
+    youtubePlayer?.destroy();
+    youtubePlayer = null;
+    clipStart = 0;
     frame?.remove();
     frame = null;
     video.pause();
@@ -385,6 +395,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   function select(chosenLine, label, seconds) {
     line = chosenLine;
     entry = line.episodes.find((e) => e.label === label) || line.episodes[0];
+    stage.classList.toggle('youtube-stage', line.source === 'youtube');
     openEpisode.hidden = true;
     openEpisode.removeAttribute('href');
     if (episodeEmbedProviders[line.source]) {
@@ -434,7 +445,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       report('网络已断开，连接后可以重试。', true);
       return;
     }
-    const seconds = Math.floor(video.currentTime) || resume;
+    const seconds = position() || resume;
     failed.add(entry.url);
     const alternative = choices(entry.label)[0];
     if (alternative) {
@@ -453,7 +464,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   function rememberEmbeddedEpisode() {
     if (!accountId) return;
     const token = generation;
-    const data = { accountId, source: line.source, revision: line.revision, label: entry.label, seconds: 0 };
+    const data = { accountId, source: line.source, revision: line.revision, label: entry.label, kind:'opened', seconds:null };
     progressWrites = progressWrites.then(() => {
       if (activeAccount?.id === accountId) return accountRequest('episode-progress/' + encodeURIComponent(work.id), data);
     }).catch(() => { if (generation === token) report('本集观看记录未同步。'); });
@@ -479,10 +490,47 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
       frame.referrerPolicy = 'strict-origin-when-cross-origin';
       const embedUrl = new URL(entry.url);
       embedUrl.searchParams.set('autoplay', '1');
+      const isYouTube = line.source === 'youtube';
+      if (isYouTube) {
+        clipStart = Number(embedUrl.searchParams.get('start') || 0);
+        const end = Number(embedUrl.searchParams.get('end'));
+        if (seconds > 0 && (!end || clipStart + seconds < end - 1))
+          embedUrl.searchParams.set('start', String(clipStart + seconds));
+        embedUrl.searchParams.set('enablejsapi','1');
+        embedUrl.searchParams.set('playsinline','1');
+        embedUrl.searchParams.set('origin',location.origin);
+      }
       frame.src = embedUrl.href;
-      room.querySelector('.episode-stage').append(frame);
+      stage.append(frame);
       frame.onload = () => { if (generation === token) report(''); };
-      rememberEmbeddedEpisode();
+      attaching = false;
+      if (!isYouTube) {
+        rememberEmbeddedEpisode();
+        return;
+      }
+      try {
+        const yt = await loadYouTubeLibrary();
+        if (generation !== token || stopped) return;
+        const track = state => {
+          if (generation !== token || stopped) return;
+          if (state === yt.PlayerState.PLAYING) {
+            hasPlayed = true;
+            persist();
+          } else if (state === yt.PlayerState.PAUSED || state === yt.PlayerState.ENDED) {
+            persist();
+          }
+        };
+        youtubePlayer = new yt.Player(frame, {events:{
+          onReady: event => track(event.target.getPlayerState()),
+          onStateChange: event => track(event.data),
+          onError: () => unavailable(token)
+        }});
+        youtubeTimer = setInterval(() => {
+          if (hasPlayed && (recorded < 0 || Math.abs(position() - recorded) >= 15)) persist();
+        }, 1000);
+      } catch {
+        if (generation === token && !stopped) rememberEmbeddedEpisode();
+      }
       return;
     }
     try {
@@ -530,7 +578,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
     }
   };
   video.ontimeupdate = () => {
-    if (hasPlayed && !video.seeking && !video.paused && Math.abs(video.currentTime - recorded) >= 15) persist();
+    if (hasPlayed && !video.seeking && !video.paused && (recorded < 0 || Math.abs(video.currentTime - recorded) >= 15)) persist();
   };
   video.onpause = () => {
     if (!stopped) persist();
@@ -573,7 +621,7 @@ function playEpisodes(work, catalogue, initialSource, initialLabel, initialSecon
   source.onchange = () => {
     const chosen = lines.find((l) => l.source === source.value);
     const match = chosen.episodes.find((e) => e.label === entry.label);
-    choose(chosen, match?.label || chosen.episodes[0].label, match ? (Math.floor(video.currentTime) || resume) : 0);
+    choose(chosen, match?.label || chosen.episodes[0].label, match ? (position() || resume) : 0);
   };
   picker.onchange = () => chooseEpisode(labels[Number(picker.value)]);
   next.onclick = advance;
@@ -603,19 +651,16 @@ async function loadEpisodeAccess(work, target) {
       await progressWrites;
       const catalogue = await accountRequest('episodes/' + encodeURIComponent(work.id));
       if (!access.isConnected) return;
-      const progress = catalogue.progress;
-      const line =
-        catalogue.lines.find(
-          (l) => l.source === progress?.source && l.episodes.some((e) => e.label === progress.label)
-        ) || catalogue.lines[0];
-      const resume =
-        progress && line?.source === progress.source && line.episodes.some((e) => e.label === progress.label);
-      access.innerHTML = catalogue.providers ? '<button type="button" class="studio-action" data-import>导入分集</button>' : '';
       const resumeRequested = requestedResume === work.id;
+      const records = resumeRequested ? [catalogue.lastOpened, catalogue.progress] : [catalogue.progress, catalogue.lastOpened];
+      const progress = records.find(record => record && catalogue.lines.some(l =>
+        l.source === record.source && l.episodes.some(e => e.label === record.label)));
+      const line = catalogue.lines.find(l => l.source === progress?.source) || catalogue.lines[0];
+      access.innerHTML = catalogue.providers ? '<button type="button" class="studio-action" data-import>导入分集</button>' : '';
       if (resumeRequested) requestedResume = null;
       if (line) {
-        playEpisodes(work, catalogue, line.source, resume ? progress.label : line.episodes[0].label,
-          resume ? progress.seconds : 0, resumeRequested);
+        playEpisodes(work, catalogue, line.source, progress?.label || line.episodes[0].label,
+          progress?.seconds || 0, resumeRequested);
       }
       const links = (catalogue.officialLinks || []).filter(link => link.url.startsWith('https://'));
       if (links.length) {
@@ -637,6 +682,7 @@ async function loadEpisodeAccess(work, target) {
         opener.onclick = () =>
           openEpisodeImport(work, catalogue, opener, async () => {
             stopEpisodePlayer();
+            loadPlaybackSummaries(true);
             await refresh();
           });
     } catch (e) {
